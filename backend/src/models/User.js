@@ -38,6 +38,7 @@ const userStatsSchema = new mongoose.Schema(
     questionsAnswered: { type: Number, default: 0 },
     actionsCompleted: { type: Number, default: 0 },
     translationsCount: { type: Number, default: 0 },
+    visionScansCompleted: { type: Number, default: 0 },
   },
   { _id: false }
 );

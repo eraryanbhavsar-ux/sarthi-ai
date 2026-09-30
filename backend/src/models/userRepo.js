@@ -25,6 +25,14 @@ export const userRepo = {
     return memoryStore.createUser(userData);
   },
 
+  async update(id, updates) {
+    if (!id) return null;
+    if (getDBStatus().isConnected) {
+      return await User.findByIdAndUpdate(id, updates, { new: true });
+    }
+    return memoryStore.updateUser(id, updates);
+  },
+
   async updatePreferences(id, preferences) {
     if (getDBStatus().isConnected) {
       return await User.findByIdAndUpdate(

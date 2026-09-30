@@ -87,9 +87,7 @@ export async function analyzeVision(req, res, next) {
 
     // Update user stats if authenticated
     if (userId) {
-      await userRepo.update(userId, {
-        $inc: { 'stats.visionScansCompleted': 1 },
-      });
+      await userRepo.incrementStat(userId, 'visionScansCompleted', 1);
     }
 
     return res.status(200).json({
