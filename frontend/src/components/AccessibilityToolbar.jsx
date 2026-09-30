@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAccessibility } from '../context/AccessibilityContext.jsx';
 import {
   Settings,
@@ -37,6 +37,17 @@ export default function AccessibilityToolbar() {
     announce,
   } = useAccessibility();
 
+  // Close on Escape key for keyboard accessibility
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
   const resetAll = () => {
     setTextSize('normal');
     setHighContrast('none');
@@ -49,29 +60,42 @@ export default function AccessibilityToolbar() {
 
   return (
     <>
-      {/* Floating Toolbar Trigger Button */}
+      {/* Floating Toolbar Trigger Button - Intentionally positioned and elevated */}
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-full shadow-2xl transition-all hover:scale-105 focus:outline-none focus:ring-4 focus:ring-amber-400 font-semibold text-sm border-2 border-white/20"
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-3 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white rounded-full shadow-2xl transition-all hover:scale-105 focus:outline-none focus:ring-4 focus:ring-amber-400 font-bold text-xs sm:text-sm border-2 border-white/20"
         aria-label="Open Accessibility Controls Toolbar"
+        aria-haspopup="dialog"
         aria-expanded={isOpen}
       >
-        <SlidersHorizontal className="w-5 h-5" aria-hidden="true" />
+        <SlidersHorizontal className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
         <span className="hidden sm:inline">Accessibility Controls</span>
+        <span className="sm:hidden">A11y Controls</span>
         {isOpen && <X className="w-4 h-4 ml-1" aria-hidden="true" />}
       </button>
+
+      {/* Backdrop for mobile */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 sm:hidden"
+          onClick={() => setIsOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Slide-over / Modal Controls Panel */}
       {isOpen && (
         <div
-          role="region"
-          aria-label="Accessibility Settings"
-          className="fixed bottom-24 right-6 z-50 w-96 max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 overflow-y-auto max-h-[80vh] transition-all"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="a11y-toolbar-title"
+          className="fixed inset-x-4 bottom-20 sm:inset-auto sm:bottom-24 sm:right-6 z-50 sm:w-96 max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5 overflow-y-auto max-h-[82vh] transition-all"
         >
           <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 mb-4">
             <div className="flex items-center gap-2">
               <Settings className="w-5 h-5 text-brand-600 dark:text-brand-400" aria-hidden="true" />
-              <h2 className="font-bold text-slate-900 dark:text-white text-base">
+              <h2 id="a11y-toolbar-title" className="font-bold text-slate-900 dark:text-white text-base">
                 Accessibility Toolbar
               </h2>
             </div>

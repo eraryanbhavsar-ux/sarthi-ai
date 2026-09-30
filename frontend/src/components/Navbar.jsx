@@ -47,7 +47,7 @@ export default function Navbar() {
                   AI
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium tracking-tight -mt-0.5 hidden xs:block">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium tracking-tight -mt-0.5 hidden sm:block">
                 Understand. Hear. Translate. Act.
               </p>
             </div>
@@ -80,7 +80,7 @@ export default function Navbar() {
             </Link>
           </nav>
 
-          {/* Right Actions */}
+          {/* Right Actions (Desktop) */}
           <div className="hidden sm:flex items-center gap-2.5">
             {/* Quick Language Dropdown */}
             <div className="relative">
@@ -171,11 +171,25 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* Mobile menu button */}
-          <div className="flex items-center gap-2 md:hidden">
+          {/* Mobile Right Controls: Quick Lang + Menu Button */}
+          <div className="flex items-center gap-1.5 sm:hidden">
+            <div className="relative">
+              <label htmlFor="mobile-nav-lang" className="sr-only">Language</label>
+              <select
+                id="mobile-nav-lang"
+                value={activeLanguage}
+                onChange={(e) => setActiveLanguage(e.target.value)}
+                className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-1.5 cursor-pointer focus:outline-none"
+              >
+                <option value="en">EN</option>
+                <option value="hi">HI</option>
+                <option value="mr">MR</option>
+              </select>
+            </div>
+
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+              className="p-1.5 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
               aria-label="Toggle mobile menu"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
