@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   Compass,
+  Eye,
 } from 'lucide-react';
 
 export default function Navbar() {
