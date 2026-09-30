@@ -6,6 +6,8 @@ import {
   Sun,
   Moon,
   Eye,
+  EyeOff,
+  Mic,
   Volume2,
   Globe,
   SlidersHorizontal,
@@ -32,6 +34,10 @@ export default function AccessibilityToolbar() {
     setSimplifiedInterface,
     voiceMode,
     setVoiceMode,
+    blindMode,
+    setBlindMode,
+    lowVisionMode,
+    setLowVisionMode,
     activeLanguage,
     setActiveLanguage,
     announce,
@@ -55,6 +61,8 @@ export default function AccessibilityToolbar() {
     setReducedMotion(false);
     setSimplifiedInterface(false);
     setVoiceMode(false);
+    setBlindMode(false);
+    setLowVisionMode(false);
     announce('All accessibility preferences reset to default.');
   };
 
@@ -119,6 +127,66 @@ export default function AccessibilityToolbar() {
           </div>
 
           <div className="space-y-4 text-sm">
+            {/* 0A. Blind / Voice-First Mode (Highlighted for primary accessibility) */}
+            <div className="p-3.5 rounded-xl bg-amber-500/10 dark:bg-amber-400/10 border-2 border-amber-500/40 dark:border-amber-400/40">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <EyeOff className="w-4 h-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <p className="font-bold text-slate-900 dark:text-amber-300 text-sm">
+                    Blind / Voice-First Mode
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={blindMode}
+                  onClick={() => setBlindMode(!blindMode)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                    blindMode ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
+                  }`}
+                  aria-label="Toggle Blind and Voice-First Mode"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      blindMode ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                Enlarges primary controls, speaks screen changes aloud automatically, and optimizes keyboard navigation.
+              </p>
+            </div>
+
+            {/* 0B. Low-Vision High Visibility Mode */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+              <div>
+                <p className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Eye className="w-4 h-4 text-amber-500" aria-hidden="true" />
+                  Low-Vision Mode
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Enhanced typography scale, bold borders, and yellow highlight rings
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={lowVisionMode}
+                onClick={() => setLowVisionMode(!lowVisionMode)}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                  lowVisionMode ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'
+                }`}
+                aria-label="Toggle Low-Vision Mode"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    lowVisionMode ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
             {/* 1. Text Sizing */}
             <div>
               <label className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mb-2">

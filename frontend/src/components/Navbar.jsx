@@ -56,6 +56,21 @@ export default function Navbar() {
           {/* Desktop Nav Links */}
           <nav className="hidden md:flex items-center gap-1 lg:gap-2" aria-label="Main Navigation">
             <Link
+              to="/vision"
+              className={`px-3.5 py-2 rounded-lg font-bold text-sm transition-all flex items-center gap-1.5 ${
+                isActive('/vision')
+                  ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                  : 'text-amber-800 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30'
+              }`}
+            >
+              <Eye className="w-4 h-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+              <span>SARTHI Vision</span>
+              <span className="text-[10px] px-1.5 py-0.2 bg-amber-500 text-slate-950 rounded font-black uppercase tracking-wider">
+                Voice
+              </span>
+            </Link>
+
+            <Link
               to="/workspace"
               className={`px-3.5 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-1.5 ${
                 isActive('/workspace')
@@ -202,9 +217,22 @@ export default function Navbar() {
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pt-3 pb-6 space-y-3">
           <Link
+            to="/vision"
+            onClick={() => setMobileMenuOpen(false)}
+            className="flex items-center justify-between py-2 text-base font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-3 rounded-lg"
+          >
+            <span className="flex items-center gap-2">
+              <Eye className="w-5 h-5 text-amber-500" />
+              SARTHI Vision
+            </span>
+            <span className="text-xs px-2 py-0.5 bg-amber-500 text-slate-950 rounded font-bold uppercase">
+              Voice
+            </span>
+          </Link>
+          <Link
             to="/workspace"
             onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-base font-semibold text-slate-800 dark:text-white"
+            className="block py-2 text-base font-semibold text-slate-800 dark:text-white px-3"
           >
             Workspace
           </Link>

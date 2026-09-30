@@ -189,3 +189,120 @@ Provide your output as a JSON object:
   ]
 }`;
 }
+
+export const SYSTEM_VISION_PROMPT = `You are SARTHI Vision, an AI accessibility vision engine designed specifically for blind and low-vision users.
+
+YOUR MISSION:
+Empower someone who cannot see or has severely limited vision to independently understand their environment, documents, forms, labels, signs, and physical surroundings through spoken and structured descriptions.
+
+CRITICAL ACCESSIBILITY & SAFETY RULES:
+1. "WHAT AM I LOOKING AT?": Provide a clear, natural, high-level summary first (2-3 sentences), followed by concrete details.
+2. ACCURATE TEXT: Transcribe visible printed or handwritten text accurately. Do not invent words that are unreadable. If blurry, state: "The text at the bottom appears blurry."
+3. FORMS & DOCUMENTS: Detect whether this image is a document or form. If it is a form, identify recognizable input fields, checkboxes, and signatures, and provide plain-language explanations of what each field is asking for.
+4. SPATIAL ORIENTATION: Note simple spatial relationships (e.g. "At the top center", "Along the left margin", "In the foreground") to give the user a mental model of the layout.
+5. ACTIONS & SAFETY: Suggest practical next actions. If there are warnings (e.g. hazardous material symbol, strict expiration date, fragile instructions), explicitly highlight them.
+6. ZERO HALLUCINATION / UNCERTAINTY: If you cannot confidently determine what something is, explicitly state: "I can't confidently determine that from this image." Never guess medical dosages or critical legal obligations.
+7. OUTPUT FORMAT: Return strictly valid JSON conforming to the schema.`;
+
+export function buildVisionAnalysisPrompt(userLanguage = 'en') {
+  return `Analyze this visual image thoroughly for a blind or low-vision user.
+Target output language: ${userLanguage}.
+
+Provide your output as a JSON object with this exact structure:
+{
+  "description": "Clear, concise 2-3 sentence overview answering 'What am I looking at?' so a blind user instantly understands the scene or document.",
+  "visibleText": [
+    "Extracted text line or paragraph 1",
+    "Extracted text line 2"
+  ],
+  "importantInformation": [
+    "Key detail 1 (e.g., Dates, totals, names, deadlines, instructions)",
+    "Key detail 2"
+  ],
+  "objects": [
+    "Identified object 1",
+    "Identified object 2"
+  ],
+  "possibleActions": [
+    "Recommended action 1 (e.g., Sign on the bottom line, Pay before due date)",
+    "Recommended action 2"
+  ],
+  "warnings": [
+    "Important warning, caution, or alert found in the image"
+  ],
+  "isDocument": true,
+  "spatialLayout": "Brief description of the visual layout (e.g., 2-column printed circular with official header on top and signature block on bottom right)",
+  "detectedForm": {
+    "hasForm": true,
+    "fields": [
+      {
+        "name": "field_name",
+        "label": "Visible field label",
+        "explanation": "Clear explanation of what to write in this field in simple language",
+        "isRequired": true,
+        "fieldIndex": 0
+      }
+    ]
+  }
+}`;
+}
+
+export function buildVisionQuestionPrompt(visionContext, question, userLanguage = 'en') {
+  return `You are answering a question from a blind or low-vision user about an image they have captured or uploaded.
+
+PREVIOUS VISION ANALYSIS CONTEXT:
+"""
+Description: ${visionContext.description || ''}
+Spatial Layout: ${visionContext.spatialLayout || ''}
+Visible Text: ${(visionContext.visibleText || []).join(' | ')}
+Important Info: ${(visionContext.importantInformation || []).join(' | ')}
+Objects: ${(visionContext.objects || []).join(', ')}
+Warnings: ${(visionContext.warnings || []).join(', ')}
+Detected Form Fields: ${JSON.stringify(visionContext.detectedForm?.fields || [])}
+"""
+
+USER'S QUESTION:
+"""
+${question}
+"""
+
+Target response language: ${userLanguage}.
+
+CRITICAL RULES:
+1. Answer clearly, warmly, and concisely, formatted for Text-to-Speech audio output.
+2. If the user asks "What do I need to do?", list the sequential actions directly.
+3. If the answer CANNOT be determined from the image context, respond: "I can't confidently determine that from this image."
+4. Provide 2-3 suggested follow-up questions the user might want to ask next.
+
+Return your response as a JSON object:
+{
+  "answer": "Clear spoken answer to the user's question",
+  "confident": true,
+  "suggestedFollowUp": [
+    "Follow-up question 1",
+    "Follow-up question 2"
+  ]
+}`;
+}
+
+export function buildFormGuidePrompt(fields, currentFieldIndex = 0, userLanguage = 'en') {
+  return `Guide a blind or low-vision user through filling or understanding this detected form field-by-field.
+Target language: ${userLanguage}.
+
+FORM FIELDS DETECTED:
+${JSON.stringify(fields, null, 2)}
+
+CURRENT FIELD INDEX: ${currentFieldIndex}
+
+Explain the current field in simple words. Provide tips on what format or document is typically needed.
+
+Return your output as a JSON object:
+{
+  "currentField": ${JSON.stringify(fields[currentFieldIndex] || null)},
+  "totalFields": ${fields.length},
+  "currentIndex": ${currentFieldIndex},
+  "plainExplanation": "Friendly explanation of what this specific field requires",
+  "validationTip": "E.g., Look at your Aadhaar card for the 12-digit number",
+  "nextAction": "Instruction on what to do next"
+}`;
+}

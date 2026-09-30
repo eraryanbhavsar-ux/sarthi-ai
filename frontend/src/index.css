@@ -165,3 +165,61 @@ html.contrast-light button {
 .audio-bar-3 { animation: audioPulse 1.2s ease-in-out infinite 0.3s; }
 .audio-bar-4 { animation: audioPulse 1.2s ease-in-out infinite 0.4s; }
 .audio-bar-5 { animation: audioPulse 1.2s ease-in-out infinite 0.5s; }
+
+/* ========================================================
+   BLIND / VOICE-FIRST ACCESSIBILITY MODE
+   ======================================================== */
+html.blind-voice-mode {
+  --focus-ring-color: #fbbf24;
+}
+
+html.blind-voice-mode :focus-visible {
+  outline: 4px solid #fbbf24 !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 6px rgba(0, 0, 0, 0.9) !important;
+}
+
+html.blind-voice-mode button,
+html.blind-voice-mode a[role="button"],
+html.blind-voice-mode input,
+html.blind-voice-mode select,
+html.blind-voice-mode textarea {
+  min-height: 52px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+html.blind-voice-mode .vision-primary-control {
+  min-height: 64px !important;
+  font-size: 1.2rem !important;
+  padding: 1rem 1.75rem !important;
+  border-width: 3px !important;
+}
+
+/* ========================================================
+   LOW-VISION ACCESSIBILITY MODE
+   ======================================================== */
+html.low-vision-mode {
+  font-size: 115% !important;
+  font-weight: 500;
+}
+
+html.low-vision-mode p,
+html.low-vision-mode span,
+html.low-vision-mode button {
+  letter-spacing: 0.03em !important;
+  line-height: 1.75 !important;
+}
+
+html.low-vision-mode :focus-visible {
+  outline: 4px solid #f59e0b !important;
+  outline-offset: 4px !important;
+}
+
+html.low-vision-mode .card,
+html.low-vision-mode .panel,
+html.low-vision-mode div[class*="border"] {
+  border-width: 2px !important;
+}
+

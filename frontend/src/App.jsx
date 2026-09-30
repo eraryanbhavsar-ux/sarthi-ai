@@ -10,6 +10,7 @@ import WorkspacePage from './pages/WorkspacePage.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
+import VisionPage from './pages/VisionPage.jsx';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
       <div className="flex-1">
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/vision" element={<VisionPage />} />
           <Route path="/workspace" element={<WorkspacePage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/login" element={<LoginPage />} />

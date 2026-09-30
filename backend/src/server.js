@@ -7,6 +7,7 @@ import { connectDB, getDBStatus } from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import accessibilityRoutes from './routes/accessibilityRoutes.js';
 import sessionRoutes from './routes/sessionRoutes.js';
+import visionRoutes from './routes/visionRoutes.js';
 import { globalLimiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -76,6 +77,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/accessibility', accessibilityRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/vision', visionRoutes);
 
 // 404 Route Handler
 app.use('*', (req, res) => {

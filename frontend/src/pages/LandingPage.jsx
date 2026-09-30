@@ -74,10 +74,21 @@ export default function LandingPage() {
             {/* Primary & Secondary CTAs */}
             <div className="mt-6 sm:mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
+                to="/vision"
+                className="px-6 py-3 sm:px-8 sm:py-3.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 rounded-xl sm:rounded-2xl font-black text-sm sm:text-base shadow-xl shadow-amber-500/25 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 focus:outline-none focus:ring-4 focus:ring-amber-300 border-2 border-amber-300"
+              >
+                <Eye className="w-5 h-5 text-slate-950" aria-hidden="true" />
+                <span>Open SARTHI Vision</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-slate-950 text-amber-400 rounded font-black uppercase tracking-wider ml-1">
+                  Voice
+                </span>
+              </Link>
+
+              <Link
                 to="/workspace"
                 className="px-6 py-3 sm:px-8 sm:py-3.5 bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white rounded-xl sm:rounded-2xl font-black text-sm sm:text-base shadow-lg shadow-brand-600/25 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 focus:outline-none focus:ring-4 focus:ring-amber-400"
               >
-                <span>Try SARTHI</span>
+                <span>Document Workspace</span>
                 <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
               </Link>
 
@@ -427,6 +438,110 @@ export default function LandingPage() {
                 >
                   Simplified UI: {simplifiedInterface ? 'ON' : 'OFF'}
                 </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ========================================================
+            4B. SARTHI VISION FEATURE SPOTLIGHT (BLIND & LOW-VISION EXPANSION)
+            ======================================================== */}
+        <section className="py-12 bg-slate-900 text-white border-b border-slate-800 relative overflow-hidden">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="p-8 sm:p-10 rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950/30 border-2 border-amber-500/40 shadow-2xl relative">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/40 text-amber-400 font-bold text-xs">
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>DEDICATED ACCESSIBILITY EXPANSION</span>
+                  </div>
+
+                  <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
+                    SARTHI Vision for Blind &amp; Low-Vision Independence
+                  </h2>
+
+                  <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
+                    Designed specifically for users who cannot see or have severely limited vision. Use your device's camera or upload photos to receive an immediate voice description, extract printed text, ask questions, and step through confusing forms one field at a time.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
+                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-2.5">
+                      <Volume2 className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-white">"What Am I Looking At?"</p>
+                        <p className="text-slate-400 mt-0.5">High-level spoken overview before diving into details.</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-2.5">
+                      <FileText className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-white">Read Anything &amp; Deadlines</p>
+                        <p className="text-slate-400 mt-0.5">Accurate OCR reads full text or pinpoints urgent dates.</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-2.5">
+                      <Sparkles className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-white">Smart Form Assistant</p>
+                        <p className="text-slate-400 mt-0.5">Step-by-step guidance through form fields in plain words.</p>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-2.5">
+                      <SlidersHorizontal className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-white">Blind &amp; Voice-First Mode</p>
+                        <p className="text-slate-400 mt-0.5">Keyboard hotkeys, large hit targets, and screen reader parity.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <Link
+                      to="/vision"
+                      className="inline-flex items-center gap-2 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-sm sm:text-base shadow-lg shadow-amber-500/20 focus:ring-4 focus:ring-amber-300"
+                    >
+                      <Eye className="w-5 h-5" />
+                      <span>Launch SARTHI Vision Experience</span>
+                      <ArrowRight className="w-4 h-4 ml-1" />
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-5 bg-slate-950/90 rounded-2xl p-6 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between text-xs text-amber-400 font-bold border-b border-slate-800 pb-2">
+                    <span className="flex items-center gap-1.5">
+                      <Volume2 className="w-4 h-4" />
+                      Voice-First Workflow
+                    </span>
+                    <span>100% Real AI</span>
+                  </div>
+
+                  <div className="space-y-2.5 text-xs">
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                      <span className="text-slate-300 font-semibold">1. Open Camera / Upload</span>
+                      <span className="text-slate-500 font-mono">Capture (Space)</span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                      <span className="text-slate-300 font-semibold">2. Image Understanding</span>
+                      <span className="text-amber-400 font-mono">Gemini Vision</span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                      <span className="text-slate-300 font-semibold">3. Spoken Description</span>
+                      <span className="text-sky-400 font-mono">"What is this?"</span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                      <span className="text-slate-300 font-semibold">4. Read Text Aloud</span>
+                      <span className="text-emerald-400 font-mono">Read Anything</span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between">
+                      <span className="text-slate-300 font-semibold">5. Contextual Q&amp;A</span>
+                      <span className="text-indigo-400 font-mono">Ask SARTHI</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

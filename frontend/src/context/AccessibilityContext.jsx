@@ -13,6 +13,8 @@ export function AccessibilityProvider({ children }) {
   const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem('sarthi_reduced_motion') === 'true');
   const [simplifiedInterface, setSimplifiedInterface] = useState(() => localStorage.getItem('sarthi_simplified_ui') === 'true');
   const [voiceMode, setVoiceMode] = useState(() => localStorage.getItem('sarthi_voice_mode') === 'true');
+  const [blindMode, setBlindMode] = useState(() => localStorage.getItem('sarthi_blind_mode') === 'true');
+  const [lowVisionMode, setLowVisionMode] = useState(() => localStorage.getItem('sarthi_low_vision_mode') === 'true');
   const [activeLanguage, setActiveLanguage] = useState(() => localStorage.getItem('sarthi_language') || 'en');
 
   // Screen reader live region announcement
@@ -39,6 +41,8 @@ export function AccessibilityProvider({ children }) {
       if (typeof p.reducedMotion === 'boolean') setReducedMotion(p.reducedMotion);
       if (typeof p.simplifiedInterface === 'boolean') setSimplifiedInterface(p.simplifiedInterface);
       if (typeof p.voiceMode === 'boolean') setVoiceMode(p.voiceMode);
+      if (typeof p.blindMode === 'boolean') setBlindMode(p.blindMode);
+      if (typeof p.lowVisionMode === 'boolean') setLowVisionMode(p.lowVisionMode);
     }
     if (user?.preferredLanguage) {
       setActiveLanguage(user.preferredLanguage);
@@ -85,9 +89,25 @@ export function AccessibilityProvider({ children }) {
     }
     localStorage.setItem('sarthi_simplified_ui', String(simplifiedInterface));
 
+    // Blind / Voice-First Mode
+    if (blindMode) {
+      root.classList.add('blind-voice-mode');
+    } else {
+      root.classList.remove('blind-voice-mode');
+    }
+    localStorage.setItem('sarthi_blind_mode', String(blindMode));
+
+    // Low-Vision Mode
+    if (lowVisionMode) {
+      root.classList.add('low-vision-mode');
+    } else {
+      root.classList.remove('low-vision-mode');
+    }
+    localStorage.setItem('sarthi_low_vision_mode', String(lowVisionMode));
+
     localStorage.setItem('sarthi_voice_mode', String(voiceMode));
     localStorage.setItem('sarthi_language', activeLanguage);
-  }, [textSize, highContrast, readingMode, reducedMotion, simplifiedInterface, voiceMode, activeLanguage]);
+  }, [textSize, highContrast, readingMode, reducedMotion, simplifiedInterface, voiceMode, blindMode, lowVisionMode, activeLanguage]);
 
   // Load available speech synthesis voices
   useEffect(() => {
@@ -266,12 +286,32 @@ export function AccessibilityProvider({ children }) {
       setVoiceMode(value);
       prefObj.voiceMode = value;
       announce(`Voice narration ${value ? 'enabled' : 'disabled'}`);
+    } else if (key === 'blindMode') {
+      setBlindMode(value);
+      prefObj.blindMode = value;
+      const msg = `Blind and Voice-First Mode ${value ? 'enabled. Large accessible controls and spoken guidance active.' : 'disabled.'}`;
+      announce(msg);
+      if (value) speakText(msg, activeLanguage);
+    } else if (key === 'lowVisionMode') {
+      setLowVisionMode(value);
+      prefObj.lowVisionMode = value;
+      const msg = `Low-vision high visibility mode ${value ? 'enabled' : 'disabled'}`;
+      announce(msg);
+      if (blindMode || voiceMode) speakText(msg, activeLanguage);
     } else if (key === 'activeLanguage') {
       setActiveLanguage(value);
       prefObj.preferredLanguage = value;
       announce(`Language set to ${value}`);
     }
     updateUserPreferences(prefObj);
+  };
+
+  // High-priority spoken status announcement for voice-first / blind mode
+  const speakAnnouncement = (message, forceSpeak = false) => {
+    announce(message);
+    if (blindMode || voiceMode || forceSpeak) {
+      speakText(message, activeLanguage);
+    }
   };
 
   return (
@@ -289,10 +329,15 @@ export function AccessibilityProvider({ children }) {
         setSimplifiedInterface: (val) => updatePreferenceAndSync('simplifiedInterface', val),
         voiceMode,
         setVoiceMode: (val) => updatePreferenceAndSync('voiceMode', val),
+        blindMode,
+        setBlindMode: (val) => updatePreferenceAndSync('blindMode', val),
+        lowVisionMode,
+        setLowVisionMode: (val) => updatePreferenceAndSync('lowVisionMode', val),
         activeLanguage,
         setActiveLanguage: (val) => updatePreferenceAndSync('activeLanguage', val),
         liveAnnouncement,
         announce,
+        speakAnnouncement,
         // Speech Synthesis
         speakText,
         stopSpeaking,

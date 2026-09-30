@@ -64,3 +64,41 @@ export const aiSimplificationOutputSchema = z.object({
   analogyOrExample: z.string().default(''),
   bulletTakeaways: z.array(z.string()).default([]),
 });
+
+export const formFieldOutputSchema = z.object({
+  name: z.string().default('field'),
+  label: z.string(),
+  explanation: z.string(),
+  isRequired: z.boolean().default(false),
+  fieldIndex: z.number().default(0),
+});
+
+export const visionAnalysisOutputSchema = z.object({
+  description: z.string(),
+  visibleText: z.array(z.string()).default([]),
+  importantInformation: z.array(z.string()).default([]),
+  objects: z.array(z.string()).default([]),
+  possibleActions: z.array(z.string()).default([]),
+  warnings: z.array(z.string()).default([]),
+  isDocument: z.boolean().default(false),
+  spatialLayout: z.string().default(''),
+  detectedForm: z.object({
+    hasForm: z.boolean().default(false),
+    fields: z.array(formFieldOutputSchema).default([]),
+  }).default({ hasForm: false, fields: [] }),
+});
+
+export const visionQuestionAnswerSchema = z.object({
+  answer: z.string(),
+  confident: z.boolean().default(true),
+  suggestedFollowUp: z.array(z.string()).default([]),
+});
+
+export const formGuideOutputSchema = z.object({
+  currentField: formFieldOutputSchema.optional(),
+  totalFields: z.number().default(0),
+  currentIndex: z.number().default(0),
+  plainExplanation: z.string().default(''),
+  validationTip: z.string().default(''),
+  nextAction: z.string().default(''),
+});
