@@ -281,24 +281,26 @@ export default function LandingPage() {
                 <button
                   type="button"
                   onClick={() => speakText(demoVoiceSample)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500 text-white font-bold text-xs hover:bg-sky-600"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500 text-white font-bold text-xs hover:bg-sky-600 transition-colors shadow-sm"
+                  aria-label="Listen to audio explanation"
                 >
-                  <Volume2 className="w-3.5 h-3.5" />
-                  <span>🔊 Listen</span>
+                  <Volume2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Listen</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => speakText("हे शिष्यवृत्तीचे अधिकृत सूचनापत्र असून १५ ऑक्टोबरच्या आत अर्ज करणे आवश्यक आहे.", "mr")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 text-white font-bold text-xs hover:bg-indigo-600"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 text-white font-bold text-xs hover:bg-indigo-600 transition-colors shadow-sm"
+                  aria-label="Listen to Marathi translation"
                 >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>🌐 मराठी (Marathi)</span>
+                  <Globe className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>मराठी (Marathi)</span>
                 </button>
 
                 <Link
                   to="/workspace"
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 text-white font-bold text-xs hover:bg-black ml-auto"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 text-white font-bold text-xs hover:bg-black ml-auto transition-colors"
                 >
                   <span>Open in Workspace</span>
                   <ArrowRight className="w-3 h-3" />
