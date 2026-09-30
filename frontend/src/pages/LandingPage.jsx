@@ -22,6 +22,7 @@ import {
   Calendar,
   AlertTriangle,
   ArrowDown,
+  Square,
 } from 'lucide-react';
 
 export default function LandingPage() {
@@ -35,13 +36,91 @@ export default function LandingPage() {
     simplifiedInterface,
     setSimplifiedInterface,
     speakText,
+    stopSpeaking,
+    isSpeaking,
+    ttsNotice,
+    clearTtsNotice,
+    announce,
   } = useAccessibility();
 
   // Mobile tab toggle for comparison ('before' | 'after')
   const [activeTab, setActiveTab] = useState('after');
+  // Interactive demo card language toggle ('en' | 'mr')
+  const [demoLanguage, setDemoLanguage] = useState('en');
 
-  const demoVoiceSample =
-    "Here is what you need to do for the Scholarship: First, find your Aadhaar card and income certificate. Second, submit the online application before October 15th. Third, give a printed copy to your college office within seven days.";
+  const demoContent = {
+    en: {
+      headline: '"Here is what you need to do"',
+      subtitle: 'National Merit Higher Education Scholarship & Fee Waiver',
+      simpleExplanationLabel: 'Simple Explanation: ',
+      simpleExplanation:
+        'You can get a 100% college tuition fee waiver if your annual family income is under ₹3.5 Lakh and your academic score is 75% or higher.',
+      documentsTitle: 'Documents Required (3)',
+      documents: [
+        'Valid Aadhaar Card',
+        'Tahsildar Income Proof (Form 16-B)',
+        'College Marksheet (CGPA ≥ 75%)',
+      ],
+      deadlineTitle: 'Strict Deadline',
+      deadlineDate: 'October 15, 2026 at 23:59 IST',
+      deadlineNotice: 'Portal closes strictly. Late submissions are not accepted.',
+      actionsTitle: 'Clear Action Steps:',
+      steps: [
+        'Gather and verify your 3 required documents.',
+        'Submit your application on the portal before Oct 15.',
+        'Submit a printed physical copy to your college office within 7 days.',
+      ],
+      voiceSample:
+        'Here is what you need to do for the Scholarship: First, find your Aadhaar card and income certificate. Second, submit the online application before October 15th. Third, give a printed copy to your college office within seven days.',
+    },
+    mr: {
+      headline: '"तुम्हाला काय करणे आवश्यक आहे"',
+      subtitle: 'राष्ट्रीय गुणवत्ता उच्च शिक्षण शिष्यवृत्ती आणि शुल्क माफी योजना',
+      simpleExplanationLabel: 'सोपे स्पष्टीकरण: ',
+      simpleExplanation:
+        'जर तुमच्या कुटुंबाचे वार्षिक उत्पन्न ₹३.५ लाखांपेक्षा कमी असेल आणि तुम्हाला ७५% किंवा त्याहून अधिक गुण मिळाले असतील, तर तुम्हाला कॉलेजच्या शैक्षणिक शुल्कात १००% माफी मिळू शकते.',
+      documentsTitle: 'आवश्यक कागदपत्रे (३)',
+      documents: [
+        'वैध आधार कार्ड',
+        'तहसीलदार उत्पन्न दाखला (फॉर्म १६-बी)',
+        'कॉलेज गुणपत्रिका (किमान ७५% गुण / CGPA)',
+      ],
+      deadlineTitle: 'कठोर अंतिम मुदत',
+      deadlineDate: '१५ ऑक्टोबर २०२६, रात्री ११:५९ पर्यंत',
+      deadlineNotice: 'पोर्टल वेळेवर बंद होईल. मुदतीनंतर आलेले अर्ज कोणत्याही परिस्थितीत स्वीकारले जाणार नाहीत.',
+      actionsTitle: 'स्पष्ट कृती पावले:',
+      steps: [
+        'आवश्यक असलेली ३ कागदपत्रे गोळा करा आणि त्यांची पडताळणी करा.',
+        '१५ ऑक्टोबरपूर्वी अधिकृत ऑनलाइन पोर्टलवर अर्ज पूर्ण भरा.',
+        '७ दिवसांच्या आत अर्जाची मूळ प्रत तुमच्या कॉलेज कार्यालयात जमा करा.',
+      ],
+      voiceSample:
+        'हे शिष्यवृत्तीचे अधिकृत सूचनापत्र आहे. जर कुटुंबाचे वार्षिक उत्पन्न साडेतीन लाखांपेक्षा कमी असेल तर १०० टक्के फी माफी मिळेल. १५ ऑक्टोबर २०२६ पूर्वी आधार कार्ड, उत्पन्नाचा दाखला आणि गुणपत्रिका जोडून ऑनलाइन अर्ज करणे आवश्यक आहे.',
+    },
+  };
+
+  const currentContent = demoContent[demoLanguage] || demoContent.en;
+
+  const toggleDemoLanguage = (targetLang) => {
+    const nextLang = targetLang || (demoLanguage === 'en' ? 'mr' : 'en');
+    setDemoLanguage(nextLang);
+    if (clearTtsNotice) clearTtsNotice();
+    if (announce) {
+      announce(nextLang === 'mr' ? 'मराठी भाषांतर सक्रिय झाले.' : 'Switched to English explanation.');
+    }
+    // Attempt audio readout in the selected language
+    if (speakText) {
+      speakText(demoContent[nextLang].voiceSample, nextLang);
+    }
+  };
+
+  const handleListen = () => {
+    if (isSpeaking && stopSpeaking) {
+      stopSpeaking();
+    } else if (speakText) {
+      speakText(currentContent.voiceSample, demoLanguage);
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors">
@@ -261,25 +340,32 @@ export default function LandingPage() {
             >
               <div>
                 <div className="flex items-center justify-between gap-2 mb-3">
-                  <span className="text-xs font-black uppercase text-brand-700 dark:text-sky-300 px-2.5 py-1 rounded bg-brand-50 dark:bg-brand-950 border border-brand-200 dark:border-brand-800">
-                    SARTHI Transformation
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black uppercase text-brand-700 dark:text-sky-300 px-2.5 py-1 rounded bg-brand-50 dark:bg-brand-950 border border-brand-200 dark:border-brand-800">
+                      SARTHI Transformation
+                    </span>
+                    {demoLanguage === 'mr' && (
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                        मराठी भाषांतर
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
                     Clear &bull; Actionable &bull; Empowering
                   </span>
                 </div>
 
                 <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white leading-tight">
-                  "Here is what you need to do"
+                  {currentContent.headline}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                  National Merit Higher Education Scholarship &amp; Fee Waiver
+                  {currentContent.subtitle}
                 </p>
 
                 {/* 1. Simple Explanation */}
                 <div className="p-3 bg-brand-50/70 dark:bg-slate-800/60 rounded-xl border border-brand-100 dark:border-slate-700 text-xs sm:text-sm text-slate-800 dark:text-slate-200 mb-3 leading-relaxed">
-                  <span className="font-bold text-brand-700 dark:text-sky-400">Simple Explanation: </span>
-                  You can get a 100% college tuition fee waiver if your annual family income is under ₹3.5 Lakh and your academic score is 75% or higher.
+                  <span className="font-bold text-brand-700 dark:text-sky-400">{currentContent.simpleExplanationLabel}</span>
+                  {currentContent.simpleExplanation}
                 </div>
 
                 {/* 2. Documents Required & 3. Deadline */}
@@ -287,25 +373,25 @@ export default function LandingPage() {
                   <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800">
                     <span className="font-bold text-slate-900 dark:text-white block mb-1.5 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" aria-hidden="true" />
-                      Documents Required (3)
+                      {currentContent.documentsTitle}
                     </span>
                     <ul className="space-y-1 text-slate-600 dark:text-slate-300">
-                      <li>• Valid Aadhaar Card</li>
-                      <li>• Tahsildar Income Proof (Form 16-B)</li>
-                      <li>• College Marksheet (CGPA ≥ 75%)</li>
+                      {currentContent.documents.map((doc, idx) => (
+                        <li key={idx}>• {doc}</li>
+                      ))}
                     </ul>
                   </div>
 
                   <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-900/40">
                     <span className="font-bold text-amber-900 dark:text-amber-300 block mb-1.5 flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                      Strict Deadline
+                      {currentContent.deadlineTitle}
                     </span>
                     <p className="text-amber-800 dark:text-amber-200 font-bold">
-                      October 15, 2026 at 23:59 IST
+                      {currentContent.deadlineDate}
                     </p>
                     <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-1">
-                      Portal closes strictly. Late submissions are not accepted.
+                      {currentContent.deadlineNotice}
                     </p>
                   </div>
                 </div>
@@ -313,21 +399,17 @@ export default function LandingPage() {
                 {/* 4. Action Steps */}
                 <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 mb-4">
                   <span className="font-bold text-xs text-slate-900 dark:text-white block mb-1.5">
-                    Clear Action Steps:
+                    {currentContent.actionsTitle}
                   </span>
                   <div className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
-                    <div className="flex items-start gap-1.5">
-                      <span className="w-4 h-4 rounded bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">1</span>
-                      <span>Gather and verify your 3 required documents.</span>
-                    </div>
-                    <div className="flex items-start gap-1.5">
-                      <span className="w-4 h-4 rounded bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">2</span>
-                      <span>Submit your application on the portal before Oct 15.</span>
-                    </div>
-                    <div className="flex items-start gap-1.5">
-                      <span className="w-4 h-4 rounded bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">3</span>
-                      <span>Submit a printed physical copy to your college office within 7 days.</span>
-                    </div>
+                    {currentContent.steps.map((step, idx) => (
+                      <div key={idx} className="flex items-start gap-1.5">
+                        <span className="w-4 h-4 rounded bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">
+                          {idx + 1}
+                        </span>
+                        <span>{step}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -336,22 +418,39 @@ export default function LandingPage() {
               <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => speakText(demoVoiceSample)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white font-bold text-xs transition-colors shadow-xs"
-                  aria-label="Listen to audio explanation"
+                  onClick={handleListen}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs transition-colors shadow-xs ${
+                    isSpeaking
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse'
+                      : 'bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white'
+                  }`}
+                  aria-label={isSpeaking ? 'Stop listening' : demoLanguage === 'mr' ? 'मराठीत ऐका (Listen)' : 'Listen to audio explanation'}
                 >
-                  <Volume2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Listen</span>
+                  {isSpeaking ? (
+                    <>
+                      <Square className="w-3.5 h-3.5 fill-current" aria-hidden="true" />
+                      <span>Stop</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>{demoLanguage === 'mr' ? 'ऐका (Listen)' : 'Listen'}</span>
+                    </>
+                  )}
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => speakText("हे शिष्यवृत्तीचे अधिकृत सूचनापत्र असून १५ ऑक्टोबरच्या आत अर्ज करणे आवश्यक आहे.", "mr")}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white font-bold text-xs transition-colors shadow-xs"
-                  aria-label="Listen to Marathi translation"
+                  onClick={() => toggleDemoLanguage()}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-bold text-xs transition-all shadow-xs cursor-pointer ${
+                    demoLanguage === 'mr'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400'
+                      : 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white'
+                  }`}
+                  aria-label={demoLanguage === 'mr' ? 'Switch back to English' : 'Translate card to Marathi'}
                 >
                   <Globe className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>मराठी (Marathi)</span>
+                  <span>{demoLanguage === 'mr' ? '✓ मराठी (Show English)' : 'मराठी (Marathi)'}</span>
                 </button>
 
                 <Link
@@ -362,6 +461,30 @@ export default function LandingPage() {
                   <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                 </Link>
               </div>
+
+              {/* Status / TTS Fallback Banner */}
+              {demoLanguage === 'mr' && (
+                <div className="mt-2.5 p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-lg flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                    मराठी भाषांतर सक्रिय (Marathi translation active)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleDemoLanguage('en')}
+                    className="underline text-[11px] hover:text-emerald-900 dark:hover:text-white font-medium cursor-pointer"
+                  >
+                    Revert to English
+                  </button>
+                </div>
+              )}
+
+              {ttsNotice && demoLanguage === 'mr' && (
+                <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-lg text-[11px] text-amber-800 dark:text-amber-300 flex items-center justify-between">
+                  <span>ℹ️ {ttsNotice} (मराठी मजकूर वर दिलेला आहे)</span>
+                  <button type="button" onClick={clearTtsNotice} className="text-amber-600 hover:text-amber-800 font-bold ml-2 cursor-pointer">✕</button>
+                </div>
+              )}
             </div>
           </div>
         </section>
