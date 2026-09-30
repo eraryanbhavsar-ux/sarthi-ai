@@ -72,7 +72,7 @@ When a user uploads a PDF, image, or pasted text, SARTHI automatically extracts 
   - MongoDB Atlas (via Mongoose)
   - Seamless in-memory fallback store ensuring zero-crash offline and local evaluations.
 - **AI Engine:**
-  - Google Gemini API (`gemini-2.5-flash` / `@google/genai` SDK)
+  - Google Gemini API (`gemini-3.8-flash` / `@google/genai` SDK)
   - Multimodal vision and OCR for image screenshots and forms
   - Structured output schemas with strict Zod validation
   - Grounded question-answering prompts enforcing factual grounding.

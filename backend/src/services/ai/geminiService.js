@@ -21,7 +21,37 @@ import {
   formGuideOutputSchema,
 } from '../../validators/aiOutputSchema.js';
 
+const MODEL_NAME = env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+const FALLBACK_MODELS = [
+  MODEL_NAME,
+  'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3.5-flash',
+];
+
 let genAIClient = null;
+
+async function callGeminiResilient(client, options) {
+  const modelsToTry = [
+    options.model || MODEL_NAME,
+    ...FALLBACK_MODELS.filter((m) => m !== (options.model || MODEL_NAME)),
+  ];
+
+  let lastError = null;
+  for (const model of modelsToTry) {
+    try {
+      const response = await client.models.generateContent({
+        ...options,
+        model,
+      });
+      return response;
+    } catch (err) {
+      console.warn(`[SARTHI AI] Model ${model} encountered notice (${err.message}). Trying fallback if available...`);
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
 
 function getClient() {
   if (!genAIClient && env.GEMINI_API_KEY) {
@@ -194,8 +224,8 @@ export const geminiService = {
         let response;
         if (imageBuffer && imageMimeType) {
           // Multimodal image processing
-          response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
+          response = await callGeminiResilient(client, {
+            model: MODEL_NAME,
             contents: [
               {
                 role: 'user',
@@ -217,8 +247,8 @@ export const geminiService = {
           });
         } else {
           // Text / PDF extracted text processing
-          response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
+          response = await callGeminiResilient(client, {
+            model: MODEL_NAME,
             contents: [
               {
                 role: 'user',
@@ -267,8 +297,8 @@ export const geminiService = {
 
     if (client) {
       try {
-        const response = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
+        const response = await callGeminiResilient(client, {
+          model: MODEL_NAME,
           contents: [
             {
               role: 'user',
@@ -367,8 +397,8 @@ export const geminiService = {
 
     if (client) {
       try {
-        const response = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
+        const response = await callGeminiResilient(client, {
+          model: MODEL_NAME,
           contents: [
             {
               role: 'user',
@@ -412,8 +442,8 @@ export const geminiService = {
 
     if (client) {
       try {
-        const response = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
+        const response = await callGeminiResilient(client, {
+          model: MODEL_NAME,
           contents: [
             {
               role: 'user',
@@ -461,8 +491,8 @@ export const geminiService = {
 
     if (client && imageBuffer && imageMimeType) {
       try {
-        const response = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
+        const response = await callGeminiResilient(client, {
+          model: MODEL_NAME,
           contents: [
             {
               role: 'user',
@@ -524,8 +554,8 @@ export const geminiService = {
           });
         }
 
-        const response = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
+        const response = await callGeminiResilient(client, {
+          model: MODEL_NAME,
           contents: [{ role: 'user', parts }],
           config: {
             responseMimeType: 'application/json',
@@ -605,8 +635,8 @@ export const geminiService = {
 
     if (client && fields.length > 0) {
       try {
-        const response = await client.models.generateContent({
-          model: 'gemini-2.5-flash',
+        const response = await callGeminiResilient(client, {
+          model: MODEL_NAME,
           contents: [{ role: 'user', parts: [{ text: `${SYSTEM_VISION_PROMPT}\n\n${prompt}` }] }],
           config: {
             responseMimeType: 'application/json',
