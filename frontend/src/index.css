@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  /* Universal Visible Focus States (WCAG 2.1 AA/AAA) */
+  :focus-visible {
+    outline: 3px solid #f59e0b !important;
+    outline-offset: 3px !important;
+    border-radius: 4px;
+  }
+
+  /* Skip to Main Content Link */
+  .skip-to-content {
+    position: absolute;
+    top: -100px;
+    left: 1rem;
+    z-index: 9999;
+    padding: 0.75rem 1.5rem;
+    background-color: #0284c7;
+    color: #ffffff;
+    font-weight: 700;
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+    transition: top 0.2s ease-in-out;
+  }
+
+  .skip-to-content:focus {
+    top: 1rem;
+  }
+}
+
+/* ========================================================
+   ACCESSIBILITY THEMES & OVERRIDES
+   ======================================================== */
+
+/* Text Sizing */
+html.text-size-large {
+  font-size: 115% !important;
+}
+
+html.text-size-xlarge {
+  font-size: 130% !important;
+}
+
+/* Dyslexia / Cognitive Reading Mode */
+html.reading-mode {
+  letter-spacing: 0.05em !important;
+  word-spacing: 0.12em !important;
+}
+
+html.reading-mode p,
+html.reading-mode span,
+html.reading-mode li,
+html.reading-mode a {
+  line-height: 1.85 !important;
+}
+
+/* Reduced Motion Mode */
+html.reduced-motion *,
+html.reduced-motion *::before,
+html.reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Simplified Interface Mode */
+html.simplified-ui .hide-in-simplified {
+  display: none !important;
+}
+
+/* Dark High-Contrast Mode (Amber on Pure Deep Black) */
+html.contrast-dark {
+  background-color: #050608 !important;
+  color: #fbbf24 !important;
+}
+
+html.contrast-dark body {
+  background-color: #050608 !important;
+  color: #fbbf24 !important;
+}
+
+html.contrast-dark .bg-white,
+html.contrast-dark .bg-slate-50,
+html.contrast-dark .bg-slate-100,
+html.contrast-dark .bg-slate-200,
+html.contrast-dark .bg-brand-50 {
+  background-color: #0e1117 !important;
+  color: #fef08a !important;
+  border-color: #d97706 !important;
+}
+
+html.contrast-dark .text-slate-900,
+html.contrast-dark .text-slate-800,
+html.contrast-dark .text-slate-700,
+html.contrast-dark .text-slate-600,
+html.contrast-dark .text-slate-500 {
+  color: #fde68a !important;
+}
+
+html.contrast-dark .border,
+html.contrast-dark .border-slate-200,
+html.contrast-dark .border-slate-300 {
+  border-color: #b45309 !important;
+}
+
+html.contrast-dark button {
+  border: 2px solid #f59e0b !important;
+}
+
+/* Light High-Contrast Mode (Pure Black on White with Bold Borders) */
+html.contrast-light {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+html.contrast-light body {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+html.contrast-light .bg-white,
+html.contrast-light .bg-slate-50,
+html.contrast-light .bg-slate-100,
+html.contrast-light .bg-brand-50 {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
+}
+
+html.contrast-light .text-slate-900,
+html.contrast-light .text-slate-800,
+html.contrast-light .text-slate-700,
+html.contrast-light .text-slate-600,
+html.contrast-light .text-slate-500 {
+  color: #000000 !important;
+  font-weight: 600;
+}
+
+html.contrast-light button {
+  border: 2px solid #000000 !important;
+}
+
+/* Sound Wave Pulse for Voice Mode */
+@keyframes audioPulse {
+  0%, 100% { height: 8px; }
+  50% { height: 28px; }
+}
+
+.audio-bar-1 { animation: audioPulse 1.2s ease-in-out infinite 0.1s; }
+.audio-bar-2 { animation: audioPulse 1.2s ease-in-out infinite 0.2s; }
+.audio-bar-3 { animation: audioPulse 1.2s ease-in-out infinite 0.3s; }
+.audio-bar-4 { animation: audioPulse 1.2s ease-in-out infinite 0.4s; }
+.audio-bar-5 { animation: audioPulse 1.2s ease-in-out infinite 0.5s; }

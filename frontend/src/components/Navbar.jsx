@@ -1,0 +1,247 @@
+import React, { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
+import { useAccessibility } from '../context/AccessibilityContext.jsx';
+import {
+  Sparkles,
+  SlidersHorizontal,
+  Globe,
+  User as UserIcon,
+  LogOut,
+  LayoutDashboard,
+  FileText,
+  Volume2,
+  Menu,
+  X,
+  Compass,
+} from 'lucide-react';
+
+export default function Navbar() {
+  const { user, isAuthenticated, logout, demoLogin } = useAuth();
+  const { activeLanguage, setActiveLanguage } = useAccessibility();
+  const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+
+  const isActive = (path) => location.pathname === path;
+
+  return (
+    <header className="sticky top-0 z-40 w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 transition-colors">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 sm:h-20">
+          {/* Logo & Tagline */}
+          <Link
+            to="/"
+            className="flex items-center gap-3 group focus:outline-none focus:ring-2 focus:ring-amber-400 rounded-lg p-1"
+            aria-label="SARTHI Home"
+          >
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-brand-700 via-brand-600 to-sky-400 flex items-center justify-center text-white shadow-lg shadow-brand-500/25 group-hover:scale-105 transition-transform">
+              <Compass className="w-6 h-6 stroke-[2.2]" aria-hidden="true" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white font-sans">
+                  SARTHI
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-950 text-brand-700 dark:text-brand-300 uppercase tracking-wider">
+                  AI
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium tracking-tight -mt-0.5 hidden xs:block">
+                Understand. Hear. Translate. Act.
+              </p>
+            </div>
+          </Link>
+
+          {/* Desktop Nav Links */}
+          <nav className="hidden md:flex items-center gap-1 lg:gap-2" aria-label="Main Navigation">
+            <Link
+              to="/workspace"
+              className={`px-3.5 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-1.5 ${
+                isActive('/workspace')
+                  ? 'bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              Workspace
+            </Link>
+
+            <Link
+              to="/dashboard"
+              className={`px-3.5 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-1.5 ${
+                isActive('/dashboard')
+                  ? 'bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              Dashboard
+            </Link>
+          </nav>
+
+          {/* Right Actions */}
+          <div className="hidden sm:flex items-center gap-2.5">
+            {/* Quick Language Dropdown */}
+            <div className="relative">
+              <label htmlFor="nav-lang-select" className="sr-only">Choose Language</label>
+              <div className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                <Globe className="w-3.5 h-3.5 text-brand-600" aria-hidden="true" />
+                <select
+                  id="nav-lang-select"
+                  value={activeLanguage}
+                  onChange={(e) => setActiveLanguage(e.target.value)}
+                  className="bg-transparent border-none text-xs font-medium cursor-pointer focus:outline-none"
+                >
+                  <option value="en">EN</option>
+                  <option value="hi">हिन्दी</option>
+                  <option value="mr">मराठी</option>
+                  <option value="gu">ગુજરાતી</option>
+                  <option value="ta">தமிழ்</option>
+                  <option value="es">ES</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Auth States */}
+            {isAuthenticated ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-sm font-medium text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  aria-expanded={profileDropdownOpen}
+                >
+                  <div className="w-6 h-6 rounded-full bg-brand-600 text-white flex items-center justify-center text-xs font-bold">
+                    {user?.name?.[0] || 'U'}
+                  </div>
+                  <span className="max-w-[120px] truncate">{user?.name || 'Account'}</span>
+                </button>
+
+                {profileDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-2 z-50">
+                    <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Signed in as</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{user?.email}</p>
+                    </div>
+                    <Link
+                      to="/dashboard"
+                      onClick={() => setProfileDropdownOpen(false)}
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    >
+                      <LayoutDashboard className="w-4 h-4 text-brand-600" />
+                      Saved Sessions
+                    </Link>
+                    <button
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        logout();
+                      }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 text-left"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={demoLogin}
+                  className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-700 rounded-lg text-xs font-bold transition-colors"
+                  title="One-click demo evaluation login"
+                >
+                  ⚡ Demo Account
+                </button>
+                <Link
+                  to="/login"
+                  className="px-3.5 py-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs font-semibold transition-colors"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  className="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm"
+                >
+                  Get Started
+                </Link>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile menu button */}
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+              aria-label="Toggle mobile menu"
+            >
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Menu Dropdown */}
+      {mobileMenuOpen && (
+        <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pt-3 pb-6 space-y-3">
+          <Link
+            to="/workspace"
+            onClick={() => setMobileMenuOpen(false)}
+            className="block py-2 text-base font-semibold text-slate-800 dark:text-white"
+          >
+            Workspace
+          </Link>
+          <Link
+            to="/dashboard"
+            onClick={() => setMobileMenuOpen(false)}
+            className="block py-2 text-base font-semibold text-slate-800 dark:text-white"
+          >
+            Dashboard
+          </Link>
+          <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
+            {!isAuthenticated ? (
+              <>
+                <button
+                  onClick={() => {
+                    demoLogin();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full py-2 bg-amber-500 text-black font-bold rounded-lg text-sm"
+                >
+                  ⚡ One-Click Demo Login
+                </button>
+                <Link
+                  to="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full text-center py-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-sm font-semibold"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full text-center py-2 bg-brand-600 text-white rounded-lg text-sm font-bold"
+                >
+                  Create Free Account
+                </Link>
+              </>
+            ) : (
+              <button
+                onClick={() => {
+                  logout();
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full py-2 text-red-600 font-semibold text-left"
+              >
+                Sign Out
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}

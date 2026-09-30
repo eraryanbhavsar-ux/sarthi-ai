@@ -1,0 +1,25 @@
+{
+  "name": "sarthi",
+  "version": "1.0.0",
+  "description": "SARTHI - Understand. Hear. Translate. Act. AI for Accessibility & Inclusion",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "start:backend": "cd backend && npm start",
+    "test:backend": "cd backend && npm test",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install"
+  },
+  "keywords": [
+    "sarthi",
+    "accessibility",
+    "inclusion",
+    "ai",
+    "gemini",
+    "wcag",
+    "plain-language"
+  ],
+  "author": "SARTHI Team",
+  "license": "MIT"
+}
