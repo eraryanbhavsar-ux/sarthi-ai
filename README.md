@@ -233,16 +233,58 @@ npm test
 - `GET /api/accessibility/sample` — Load verified scholarship guidelines sample.
 - `POST /api/accessibility/voice` — Process voice transcripts and commands.
 
+### Vision Endpoints (SARTHI Vision)
+- `POST /api/vision/analyze` — Multimodal camera and image analysis for visual accessibility.
+- `POST /api/vision/question` — Ask contextual visual questions ("What am I looking at?", "What do I need to do?").
+- `POST /api/vision/form-guide` — Step-by-step form field guidance with plain-language tips.
+- `GET /api/vision/sample` — Pre-verified vision analysis sample for instant demonstration.
+- `GET /api/vision/sessions` — List user's vision scans and camera sessions.
+- `GET /api/vision/sessions/:id` — Retrieve a specific vision session (with user authorization isolation).
+- `DELETE /api/vision/sessions/:id` — Delete a vision session.
+
 ### Session Endpoints
 - `GET /api/sessions` — List user's saved accessibility sessions.
 - `GET /api/sessions/stats` — Real user analytics (documents, actions, questions).
-- `GET /api/sessions/:id` — Retrieve a specific session.
+- `GET /api/sessions/:id` — Retrieve a specific session (with strict cross-user access controls).
 - `PATCH /api/sessions/:id/checklist` — Update completed state of an action item.
 - `DELETE /api/sessions/:id` — Delete a session.
 
 ---
 
-## 10. Deployment Guide
+## 10. Marathi & Multilingual Speech Synthesis (TTS)
+
+SARTHI is architected with a dual-layer Text-to-Speech framework:
+
+1. **Client-Side Web Speech API (Zero-Cost Default):**
+   - Asynchronously detects all available device/browser voices via `speechSynthesis.getVoices()`.
+   - Matches language tags dynamically (`mr-IN`, `hi-IN`, `en-US`) without hardcoded voice names.
+   - **Truthful Fallback Notice:** If a browser or device lacks an installed Marathi voice (common on default macOS/Windows installs without Indian regional language packs), SARTHI **does not pretend speech is working** or fallback to an English voice reading Devanagari. It displays a prominent notice:
+     `"Marathi voice is not available on this device/browser."`
+     and informs the user how to install the voice pack in system settings.
+2. **Pluggable Cloud TTS Backend (Architectural Adapter):**
+   - Implemented in `frontend/src/services/ttsService.js`.
+   - If external cloud TTS is required for guaranteed Marathi playback across all legacy browsers:
+     - Provider: Google Cloud Text-to-Speech (Voice: `mr-IN-Wavenet-A` / `mr-IN-Standard-A`)
+     - Backend Environment Variable: `GOOGLE_TTS_API_KEY`
+     - Can be plugged in via `/api/accessibility/tts` without modifying any UI component.
+
+---
+
+## 11. Known Limitations & Browser Compatibility
+
+In full adherence to engineering transparency:
+
+| Feature | Limitation Type | Behavior & Fallback |
+| :--- | :--- | :--- |
+| **Marathi TTS** | Browser/OS limitation | If the OS does not have a native Marathi TTS engine installed, SARTHI displays *"Marathi voice is not available on this device/browser."* The visual Marathi translation remains fully accessible and readable. |
+| **Microphone STT** | Browser limitation | Requires `webkitSpeechRecognition` or `SpeechRecognition` (available in Chrome, Edge, Safari). Unsupported browsers display: *"Voice input isn't supported in this browser. You can type your question instead."* |
+| **SARTHI Vision** | Implementation boundary | SARTHI Vision is an assistive reading, object description, and document aid. It does **not** provide physical collision avoidance, obstacle navigation, or mobility guidance in physical spaces. |
+| **Live AI Analysis** | Environment variable | Real document and multimodal vision analysis requires `GEMINI_API_KEY` in `backend/.env`. If unconfigured, the app provides a clear configuration notice and includes pre-verified reference samples for instant evaluation. |
+| **Database Persistence** | Hybrid architecture | Uses MongoDB Atlas when `MONGODB_URI` is provided; seamlessly falls back to an in-memory repository store if MongoDB is offline or unconfigured. |
+
+---
+
+## 12. Deployment Guide
 
 ### Frontend Deployment (Vercel)
 1. Push your repository to GitHub.
@@ -267,7 +309,7 @@ npm test
 
 ---
 
-## 11. Ethical AI & Disclaimers
+## 13. Ethical AI & Disclaimers
 
 SARTHI is designed to assist and explain information, not replace legal or medical authority.
 - When critical information (such as a legal deadline or medical dosage) is analyzed, SARTHI advises users to verify with the original issuing entity.
@@ -275,6 +317,7 @@ SARTHI is designed to assist and explain information, not replace legal or medic
 
 ---
 
-## 12. License
+## 14. License
 
 Distributed under the MIT License. See `LICENSE` for details.
+

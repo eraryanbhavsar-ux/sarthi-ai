@@ -239,6 +239,20 @@ export async function getVisionSessions(req, res, next) {
   }
 }
 
+function isAuthorizedForVisionSession(session, req) {
+  if (!session) return false;
+  const requestingUserId = req.user ? (req.user._id || req.user.id)?.toString() : null;
+  const requestingGuestId = req.query.guestId || req.headers['x-guest-id'] || req.body?.guestId;
+
+  if (session.userId) {
+    return requestingUserId && session.userId.toString() === requestingUserId;
+  }
+  if (session.guestId && requestingGuestId) {
+    return session.guestId === requestingGuestId;
+  }
+  return true;
+}
+
 export async function getVisionSessionById(req, res, next) {
   try {
     const { id } = req.params;
@@ -248,6 +262,13 @@ export async function getVisionSessionById(req, res, next) {
       return res.status(404).json({
         success: false,
         error: 'Vision session not found.',
+      });
+    }
+
+    if (!isAuthorizedForVisionSession(session, req)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: You do not have permission to view this vision session.',
       });
     }
 
@@ -263,6 +284,22 @@ export async function getVisionSessionById(req, res, next) {
 export async function deleteVisionSession(req, res, next) {
   try {
     const { id } = req.params;
+    const session = await visionSessionRepo.findById(id);
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: 'Vision session not found or already deleted.',
+      });
+    }
+
+    if (!isAuthorizedForVisionSession(session, req)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: You do not have permission to delete this vision session.',
+      });
+    }
+
     const success = await visionSessionRepo.delete(id);
 
     if (!success) {

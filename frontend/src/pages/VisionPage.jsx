@@ -512,8 +512,7 @@ export default function VisionPage() {
       <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-200/90 text-center flex items-center justify-center gap-2">
         <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" aria-hidden="true" />
         <span>
-          <strong>Accessibility Notice:</strong> SARTHI Vision is an assistive reading & description aid. It is not an
-          autonomous navigation or medical diagnosis system. Verify critical legal & financial documents independently.
+          <strong>Accessibility Notice:</strong> SARTHI Vision is an assistive reading, visual description, and document aid. It does not provide real-time collision avoidance, physical obstacle detection, or navigation in moving environments. Always verify critical legal &amp; financial documents independently.
         </span>
       </div>
 

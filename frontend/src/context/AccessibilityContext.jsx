@@ -25,6 +25,8 @@ export function AccessibilityProvider({ children }) {
   const [isPaused, setIsPaused] = useState(false);
   const [speechRate, setSpeechRate] = useState(1.0);
   const [availableVoices, setAvailableVoices] = useState([]);
+  const [ttsNotice, setTtsNotice] = useState('');
+  const [currentSpokenLang, setCurrentSpokenLang] = useState('');
 
   // Speech Recognition (STT) state
   const [isListening, setIsListening] = useState(false);
@@ -109,42 +111,167 @@ export function AccessibilityProvider({ children }) {
     localStorage.setItem('sarthi_language', activeLanguage);
   }, [textSize, highContrast, readingMode, reducedMotion, simplifiedInterface, voiceMode, blindMode, lowVisionMode, activeLanguage]);
 
-  // Load available speech synthesis voices
+  // Load available speech synthesis voices with robust async handling
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      const updateVoices = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+
+    const populateVoices = () => {
+      try {
         const voices = window.speechSynthesis.getVoices();
-        setAvailableVoices(voices);
-      };
-      updateVoices();
-      window.speechSynthesis.onvoiceschanged = updateVoices;
-    }
+        if (voices && voices.length > 0) {
+          setAvailableVoices(voices);
+        }
+      } catch (err) {
+        console.warn('Voice loading exception:', err);
+      }
+    };
+
+    // Initial check
+    populateVoices();
+
+    // Browser voiceschanged event
+    window.speechSynthesis.onvoiceschanged = populateVoices;
+
+    // Async polling fallback for browsers that do not fire onvoiceschanged immediately
+    const t1 = setTimeout(populateVoices, 150);
+    const t2 = setTimeout(populateVoices, 600);
+    const t3 = setTimeout(populateVoices, 1500);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, []);
 
   // Announce messages to screen readers
   const announce = (message) => {
     setLiveAnnouncement(message);
-    setTimeout(() => setLiveAnnouncement(''), 3000);
+    setTimeout(() => setLiveAnnouncement(''), 4000);
   };
 
-  // Text-To-Speech functions
+  /**
+   * Find best matching voice dynamically without hardcoding specific voice names.
+   * Prefer mr-IN or any available Marathi voice.
+   */
+  const findBestVoice = (lang = activeLanguage) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+    const voices = availableVoices.length > 0 ? availableVoices : window.speechSynthesis.getVoices() || [];
+    if (!voices || voices.length === 0) return null;
+
+    const target = (lang || '').toLowerCase().trim();
+    const prefix = target.split(/[-_]/)[0]; // 'mr', 'hi', 'en', 'gu', 'ta', 'es'
+
+    // 1. Exact BCP-47 match (e.g. 'mr-in', 'mr_in', 'hi-in')
+    const exact = voices.find((v) => v.lang.toLowerCase().replace('_', '-') === target);
+    if (exact) return exact;
+
+    // 2. Prefix match on voice language tag
+    const prefixMatch = voices.find((v) => {
+      const vLang = v.lang.toLowerCase().replace('_', '-');
+      return vLang === prefix || vLang.startsWith(`${prefix}-`);
+    });
+    if (prefixMatch) return prefixMatch;
+
+    // 3. Match by language keyword in voice name
+    const keywordMatch = voices.find((v) => {
+      const vName = (v.name || '').toLowerCase();
+      if (prefix === 'mr' && (vName.includes('marathi') || vName.includes('mr-in') || vName.includes('mr_in'))) return true;
+      if (prefix === 'hi' && (vName.includes('hindi') || vName.includes('hi-in') || vName.includes('hi_in'))) return true;
+      if (prefix === 'gu' && vName.includes('gujarati')) return true;
+      if (prefix === 'ta' && vName.includes('tamil')) return true;
+      if (prefix === 'es' && vName.includes('spanish')) return true;
+      return false;
+    });
+    if (keywordMatch) return keywordMatch;
+
+    return null;
+  };
+
+  const isVoiceAvailable = (lang = activeLanguage) => {
+    return Boolean(findBestVoice(lang));
+  };
+
+  const getVoiceStatus = (lang = activeLanguage) => {
+    const voice = findBestVoice(lang);
+    const prefix = (lang || '').toLowerCase().split(/[-_]/)[0];
+    const langNames = {
+      mr: 'Marathi',
+      hi: 'Hindi',
+      gu: 'Gujarati',
+      ta: 'Tamil',
+      es: 'Spanish',
+      en: 'English',
+    };
+    const langName = langNames[prefix] || (lang ? lang.toUpperCase() : 'Selected language');
+
+    if (voice) {
+      return {
+        available: true,
+        voiceName: voice.name,
+        lang: voice.lang,
+        message: `${langName} voice ready: ${voice.name}`,
+      };
+    }
+    return {
+      available: false,
+      voiceName: null,
+      lang,
+      message: `${langName} voice is not available on this device/browser.`,
+    };
+  };
+
+  const clearTtsNotice = () => setTtsNotice('');
+
+  // Text-To-Speech function with strict language validation
   const speakText = (text, lang = activeLanguage) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      announce('Speech synthesis is not supported on this browser.');
-      return;
+      const msg = 'Speech synthesis is not supported on this browser.';
+      setTtsNotice(msg);
+      announce(msg);
+      return { success: false, error: msg, code: 'TTS_UNSUPPORTED' };
     }
 
-    window.speechSynthesis.cancel();
-    if (!text) return;
+    if (!text || !text.trim()) {
+      return { success: false, error: 'No text provided to read.', code: 'EMPTY_TEXT' };
+    }
+
+    const prefix = (lang || '').toLowerCase().split(/[-_]/)[0];
+    const voice = findBestVoice(lang);
+
+    // CRITICAL: If no voice exists for the requested language, DO NOT speak in English or pretend it works
+    if (!voice && (prefix === 'mr' || prefix === 'hi')) {
+      const msg = prefix === 'mr'
+        ? 'Marathi voice is not available on this device/browser.'
+        : 'Hindi voice is not available on this device/browser.';
+      setTtsNotice(msg);
+      announce(msg);
+
+      try {
+        window.speechSynthesis.cancel();
+      } catch (_) {}
+      setIsSpeaking(false);
+      setIsPaused(false);
+      return { success: false, error: msg, code: 'VOICE_NOT_AVAILABLE' };
+    }
+
+    // Clear previous notice
+    setTtsNotice('');
+    setCurrentSpokenLang(lang);
+
+    // Cancel any previous speech
+    try {
+      window.speechSynthesis.cancel();
+    } catch (_) {}
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = speechRate;
 
-    // Pick best matching voice for language
-    if (availableVoices.length > 0) {
-      const langPrefix = lang.split('-')[0].toLowerCase();
-      const match = availableVoices.find(v => v.lang.toLowerCase().startsWith(langPrefix));
-      if (match) utterance.voice = match;
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || (prefix === 'mr' ? 'mr-IN' : prefix === 'hi' ? 'hi-IN' : 'en-US');
+    } else {
+      utterance.lang = 'en-US';
     }
 
     utterance.onstart = () => {
@@ -159,18 +286,35 @@ export function AccessibilityProvider({ children }) {
       announce('Reading aloud completed.');
     };
 
+    utterance.onpause = () => {
+      setIsPaused(true);
+      announce('Reading aloud paused.');
+    };
+
+    utterance.onresume = () => {
+      setIsPaused(false);
+      announce('Reading aloud resumed.');
+    };
+
     utterance.onerror = (e) => {
-      console.warn('Speech synthesis error:', e);
+      if (e.error !== 'canceled' && e.error !== 'interrupted') {
+        console.warn('Speech synthesis error:', e);
+        const errMsg = `Speech synthesis issue: ${e.error || 'playback interrupted'}`;
+        setTtsNotice(errMsg);
+      }
       setIsSpeaking(false);
       setIsPaused(false);
     };
 
     window.speechSynthesis.speak(utterance);
+    return { success: true };
   };
 
   const stopSpeaking = () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+      try {
+        window.speechSynthesis.cancel();
+      } catch (_) {}
       setIsSpeaking(false);
       setIsPaused(false);
       announce('Audio stopped.');
@@ -179,17 +323,21 @@ export function AccessibilityProvider({ children }) {
 
   const pauseSpeaking = () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window && isSpeaking) {
-      window.speechSynthesis.pause();
-      setIsPaused(true);
-      announce('Audio paused.');
+      try {
+        window.speechSynthesis.pause();
+        setIsPaused(true);
+        announce('Audio paused.');
+      } catch (_) {}
     }
   };
 
   const resumeSpeaking = () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window && isPaused) {
-      window.speechSynthesis.resume();
-      setIsPaused(false);
-      announce('Audio resumed.');
+      try {
+        window.speechSynthesis.resume();
+        setIsPaused(false);
+        announce('Audio resumed.');
+      } catch (_) {}
     }
   };
 
@@ -197,7 +345,7 @@ export function AccessibilityProvider({ children }) {
   const startListening = (onResultCallback, onErrorCallback) => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      const msg = 'Microphone speech recognition is not supported in this browser. You can type your question directly.';
+      const msg = "Voice input isn't supported in this browser. You can type your question instead.";
       announce(msg);
       if (onErrorCallback) onErrorCallback(msg);
       return false;
@@ -229,9 +377,12 @@ export function AccessibilityProvider({ children }) {
       recognition.onerror = (event) => {
         console.warn('Speech recognition error:', event.error);
         setIsListening(false);
-        const msg = event.error === 'not-allowed'
-          ? 'Microphone access was denied. Please allow microphone permissions in your browser settings.'
-          : `Speech input error: ${event.error}`;
+        let msg = `Speech input error: ${event.error}`;
+        if (event.error === 'not-allowed') {
+          msg = 'Microphone access was denied. Please allow microphone permissions in your browser settings or type your question.';
+        } else if (event.error === 'no-speech') {
+          msg = 'No speech detected. Please speak clearly into your microphone or type your question.';
+        }
         announce(msg);
         if (onErrorCallback) onErrorCallback(msg);
       };
@@ -348,6 +499,11 @@ export function AccessibilityProvider({ children }) {
         speechRate,
         setSpeechRate,
         availableVoices,
+        isVoiceAvailable,
+        getVoiceStatus,
+        ttsNotice,
+        clearTtsNotice,
+        currentSpokenLang,
         // Speech Recognition
         startListening,
         stopListening,

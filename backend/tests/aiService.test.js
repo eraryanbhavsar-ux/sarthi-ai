@@ -2,22 +2,34 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { geminiService } from '../src/services/ai/geminiService.js';
 
-test('geminiService.analyzeContent should return a structured result with required fields', async () => {
+test('geminiService.analyzeContent should enforce API key configuration or return structured result', async () => {
   const sample = `Notice of Fee Payment: All students must submit Rs 5000 before 20th November 2026. Required: Aadhaar card and Fee Receipt.`;
-  const result = await geminiService.analyzeContent({
-    text: sample,
-    contentType: 'text',
-    userLanguage: 'en',
-  });
-
-  assert.ok(result.title);
-  assert.ok(result.summary);
-  assert.ok(result.simpleExplanation);
-  assert.ok(Array.isArray(result.keyPoints));
-  assert.ok(Array.isArray(result.requiredActions));
-  assert.ok(Array.isArray(result.steps));
-  assert.ok(Array.isArray(result.deadlines));
-  assert.ok(Array.isArray(result.requiredDocuments));
+  if (!process.env.GEMINI_API_KEY) {
+    await assert.rejects(
+      async () => {
+        await geminiService.analyzeContent({
+          text: sample,
+          contentType: 'text',
+          userLanguage: 'en',
+        });
+      },
+      /Gemini AI is not configured/
+    );
+  } else {
+    const result = await geminiService.analyzeContent({
+      text: sample,
+      contentType: 'text',
+      userLanguage: 'en',
+    });
+    assert.ok(result.title);
+    assert.ok(result.summary);
+    assert.ok(result.simpleExplanation);
+    assert.ok(Array.isArray(result.keyPoints));
+    assert.ok(Array.isArray(result.requiredActions));
+    assert.ok(Array.isArray(result.steps));
+    assert.ok(Array.isArray(result.deadlines));
+    assert.ok(Array.isArray(result.requiredDocuments));
+  }
 });
 
 test('geminiService.answerQuestion should answer grounded questions', async () => {

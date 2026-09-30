@@ -210,7 +210,7 @@ export const geminiService = {
                 ],
               },
             ],
-            generationConfig: {
+            config: {
               responseMimeType: 'application/json',
               temperature: 0.2,
             },
@@ -227,7 +227,7 @@ export const geminiService = {
                 ],
               },
             ],
-            generationConfig: {
+            config: {
               responseMimeType: 'application/json',
               temperature: 0.2,
             },
@@ -242,18 +242,20 @@ export const geminiService = {
           if (validated.success) {
             return validated.data;
           }
-          console.warn('[SARTHI AI] AI output schema mismatch, patching defaults:', validated.error.format());
-          // Merge defaults
-          return { ...generateHeuristicAnalysis(text || '', contentType, userLanguage), ...parsed };
+          console.warn('[SARTHI AI] AI output schema mismatch, returning parsed object:', validated.error.format());
+          return parsed;
         }
+
+        throw new Error('AI service returned an empty or unparseable structured response.');
       } catch (err) {
-        console.warn(`[SARTHI AI] Gemini API call failed (${err.message}). Using intelligent accessibility fallback engine.`);
+        console.warn(`[SARTHI AI] Gemini API call failed (${err.message}).`);
+        throw new Error(`Gemini AI analysis failed: ${err.message}. Please check your connection and API key.`);
       }
-    } else {
-      console.log('[SARTHI AI] GEMINI_API_KEY not configured. Running intelligent heuristic accessibility engine.');
     }
 
-    return generateHeuristicAnalysis(text || '', contentType, userLanguage);
+    throw new Error(
+      'Gemini AI is not configured. Please set GEMINI_API_KEY in your backend .env file to analyze custom documents and images. You can also explore the pre-verified Higher Education Grant sample.'
+    );
   },
 
   /**
@@ -273,7 +275,7 @@ export const geminiService = {
               parts: [{ text: `${SYSTEM_ACCESSIBILITY_PROMPT}\n\n${prompt}` }],
             },
           ],
-          generationConfig: {
+          config: {
             responseMimeType: 'application/json',
             temperature: 0.1,
           },
@@ -286,6 +288,7 @@ export const geminiService = {
           if (validated.success) {
             return validated.data;
           }
+          return parsed;
         }
       } catch (err) {
         console.warn('[SARTHI AI] QnA Gemini call failed:', err.message);
@@ -294,15 +297,28 @@ export const geminiService = {
 
     // Grounded fallback answering
     const docLower = (documentContent || '').toLowerCase();
-    const qLower = question.toLowerCase();
+    const qClean = question.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+    const stopWords = new Set([
+      'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'in', 'on', 'at', 'to', 'for', 'of',
+      'with', 'by', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below',
+      'from', 'up', 'down', 'out', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when',
+      'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no',
+      'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'can', 'will', 'just', 'should', 'now',
+      'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'have', 'has', 'had', 'having',
+      'do', 'does', 'did', 'doing', 'would', 'could', 'tell', 'please', 'explain', 'need', 'i', 'my', 'me', 'you'
+    ]);
 
-    // Check if relevant terms are in document
-    const words = qLower.split(' ').filter(w => w.length > 3 && !['what', 'when', 'where', 'which', 'about', 'this', 'that', 'have'].includes(w));
-    const matchingWords = words.filter(w => docLower.includes(w));
+    const words = qClean.split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+    const matchingWords = words.filter(w => {
+      const stem = w.length > 5 ? w.substring(0, w.length - 2) : w;
+      return docLower.includes(stem);
+    });
 
-    if (words.length > 0 && matchingWords.length === 0) {
+    const matchRatio = words.length > 0 ? (matchingWords.length / words.length) : 0;
+
+    if (words.length === 0 || matchRatio < 0.5) {
       return {
-        answer: "I couldn't find that information in the provided content. Please verify directly with the issuing department or check the original portal.",
+        answer: "I couldn't find that information in the provided content. You may want to check directly with the issuing organization or inspect the original document.",
         sourceFound: false,
         relevantSection: 'Not present in provided document',
         suggestedFollowUp: [
@@ -312,13 +328,32 @@ export const geminiService = {
       };
     }
 
+    // Locate and score relevant sentences from document
+    const rawSentences = (documentContent || '').split(/(?<=[.?!:\n])\s+/);
+    const scoredSentences = rawSentences.map(s => {
+      const sLower = s.toLowerCase();
+      let score = 0;
+      matchingWords.forEach(w => {
+        const stem = w.length > 5 ? w.substring(0, w.length - 2) : w;
+        if (sLower.includes(stem)) score++;
+      });
+      return { sentence: s.trim(), score };
+    }).filter(s => s.score > 0 && s.sentence.length > 15);
+
+    scoredSentences.sort((a, b) => b.score - a.score);
+    const bestSentences = scoredSentences.slice(0, 3).map(s => s.sentence).join(' ');
+
+    const answerText = bestSentences
+      ? `Based on the provided document: "${bestSentences}"`
+      : `Based on the provided document, "${matchingWords.join(', ')}" is addressed in the guidelines. Please follow the instructions and deadlines specified.`;
+
     return {
-      answer: `Based on the provided document, the requirements indicate: "${matchingWords.join(', ')}" is specifically addressed in the guidelines. Make sure to complete each action step carefully and keep all supporting certificates ready.`,
+      answer: answerText,
       sourceFound: true,
-      relevantSection: 'Official Guidelines excerpt',
+      relevantSection: scoredSentences[0] ? scoredSentences[0].sentence.substring(0, 80) : 'Document Guidelines',
       suggestedFollowUp: [
-        'Can I get an extension on the deadline?',
         'What documents do I need to prepare first?',
+        'Can you explain this in simpler terms?',
       ],
     };
   },
@@ -340,7 +375,7 @@ export const geminiService = {
               parts: [{ text: `${SYSTEM_ACCESSIBILITY_PROMPT}\n\n${prompt}` }],
             },
           ],
-          generationConfig: {
+          config: {
             responseMimeType: 'application/json',
             temperature: 0.2,
           },
@@ -353,74 +388,19 @@ export const geminiService = {
           if (validated.success) {
             return validated.data;
           }
+          return parsed;
         }
+
+        throw new Error('AI returned an empty translation response.');
       } catch (err) {
         console.warn('[SARTHI AI] Translation Gemini call failed:', err.message);
+        throw new Error(`Translation failed: ${err.message}. Please verify your network and Gemini API key.`);
       }
     }
 
-    // High quality multilingual dictionary & phrase mappings for Marathi and Hindi
-    const isMarathi = targetLanguage.toLowerCase().startsWith('mr');
-    const isHindi = targetLanguage.toLowerCase().startsWith('hi');
-
-    if (isMarathi) {
-      return {
-        language: 'mr',
-        simpleExplanation: `हे दस्तऐवज सोप्या मराठी भाषेत खालीलप्रमाणे आहे:\n\n१. हे एक अधिकृत सूचनापत्र असून यात महत्त्वाचे नियम आणि सूचना दिलेल्या आहेत.\n२. अर्जदाराने आवश्यक ओळखपत्र आणि प्रमाणपत्रांची पडताळणी वेळेत पूर्ण करावी.\n३. अंतिम मुदतीच्या आत अर्ज सादर करणे अनिवार्य आहे जेणेकरून अर्ज रद्द होणार नाही.`,
-        keyPoints: [
-          'सर्व पात्रता अटी काळजीपूर्वक वाचा.',
-          'आपली कागदपत्रे स्कॅन करून जवळ ठेवा.',
-          'अंतिम तारखेपूर्वी अर्ज पूर्ण करा.',
-          'अपूर्ण माहिती दिल्यास अर्ज नाकारला जाऊ शकतो.',
-        ],
-        requiredActions: (sessionData.requiredActions || []).map(a => ({
-          id: a.id,
-          text: `मराठी: ${a.text}`,
-          explanation: a.explanation ? `स्पष्टीकरण: ${a.explanation}` : '',
-          deadline: a.deadline || '',
-          completed: a.completed || false,
-        })),
-        steps: (sessionData.steps || []).map(s => ({
-          stepNumber: s.stepNumber,
-          title: `पायरी ${s.stepNumber}: ${s.title}`,
-          description: s.description,
-          tip: s.tip || '',
-        })),
-      };
-    } else if (isHindi) {
-      return {
-        language: 'hi',
-        simpleExplanation: `इस दस्तावेज़ का सरल हिंदी में विवरण:\n\n१. यह एक आधिकारिक सूचना है जिसमें महत्वपूर्ण नियम और निर्देश दिए गए हैं।\n२. आपको अपने पहचान पत्र और ज़रूरी दस्तावेज़ तैयार रखने होंगे।\n३. अंतिम तारीख से पहले अपना आवेदन पूरा करें ताकि आवेदन रद्द न हो।`,
-        keyPoints: [
-          'पात्रता के सभी नियमों को ध्यान से पढ़ें।',
-          'अपने पहचान पत्र और प्रमाण पत्र तैयार रखें।',
-          'अंतिम तिथि से पहले आवेदन जमा करें।',
-          'अधूरी जानकारी होने पर आवेदन अस्वीकार हो सकता है।',
-        ],
-        requiredActions: (sessionData.requiredActions || []).map(a => ({
-          id: a.id,
-          text: `हिंदी: ${a.text}`,
-          explanation: a.explanation ? `विवरण: ${a.explanation}` : '',
-          deadline: a.deadline || '',
-          completed: a.completed || false,
-        })),
-        steps: (sessionData.steps || []).map(s => ({
-          stepNumber: s.stepNumber,
-          title: `कदम ${s.stepNumber}: ${s.title}`,
-          description: s.description,
-          tip: s.tip || '',
-        })),
-      };
-    }
-
-    // Default translation echo
-    return {
-      language: targetLanguage,
-      simpleExplanation: `[${targetLanguage.toUpperCase()}] ${sessionData.simpleExplanation}`,
-      keyPoints: sessionData.keyPoints || [],
-      requiredActions: sessionData.requiredActions || [],
-      steps: sessionData.steps || [],
-    };
+    throw new Error(
+      'Multilingual AI translation requires GEMINI_API_KEY in your backend .env file.'
+    );
   },
 
   /**
@@ -440,7 +420,7 @@ export const geminiService = {
               parts: [{ text: `${SYSTEM_ACCESSIBILITY_PROMPT}\n\n${prompt}` }],
             },
           ],
-          generationConfig: {
+          config: {
             responseMimeType: 'application/json',
             temperature: 0.3,
           },
@@ -453,6 +433,7 @@ export const geminiService = {
           if (validated.success) {
             return validated.data;
           }
+          return parsed;
         }
       } catch (err) {
         console.warn('[SARTHI AI] Simplification Gemini call failed:', err.message);
@@ -496,7 +477,7 @@ export const geminiService = {
               ],
             },
           ],
-          generationConfig: {
+          config: {
             responseMimeType: 'application/json',
             temperature: 0.2,
           },
@@ -509,15 +490,19 @@ export const geminiService = {
           if (validated.success) {
             return validated.data;
           }
-          console.warn('[SARTHI Vision] Schema mismatch, merging with heuristic defaults:', validated.error.format());
-          return { ...generateHeuristicVisionAnalysis(userLanguage), ...parsed };
+          return parsed;
         }
+
+        throw new Error('Vision AI returned an empty response.');
       } catch (err) {
-        console.warn(`[SARTHI Vision] Gemini Vision call failed (${err.message}). Using intelligent vision fallback.`);
+        console.warn(`[SARTHI Vision] Gemini Vision call failed (${err.message}).`);
+        throw new Error(`Gemini Vision analysis failed: ${err.message}. Please check your connection and API key.`);
       }
     }
 
-    return generateHeuristicVisionAnalysis(userLanguage);
+    throw new Error(
+      'SARTHI Vision requires GEMINI_API_KEY in backend/.env for real multimodal image analysis. You can also explore the pre-verified Vision Sample.'
+    );
   },
 
   /**
@@ -542,7 +527,7 @@ export const geminiService = {
         const response = await client.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: [{ role: 'user', parts }],
-          generationConfig: {
+          config: {
             responseMimeType: 'application/json',
             temperature: 0.1,
           },
@@ -555,6 +540,7 @@ export const geminiService = {
           if (validated.success) {
             return validated.data;
           }
+          return parsed;
         }
       } catch (err) {
         console.warn('[SARTHI Vision] Question answering Gemini call failed:', err.message);
@@ -622,7 +608,7 @@ export const geminiService = {
         const response = await client.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: [{ role: 'user', parts: [{ text: `${SYSTEM_VISION_PROMPT}\n\n${prompt}` }] }],
-          generationConfig: {
+          config: {
             responseMimeType: 'application/json',
             temperature: 0.2,
           },

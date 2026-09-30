@@ -30,6 +30,20 @@ export async function getSessions(req, res, next) {
   }
 }
 
+function isAuthorizedForSession(session, req) {
+  if (!session) return false;
+  const requestingUserId = req.user ? (req.user._id || req.user.id)?.toString() : null;
+  const requestingGuestId = req.query.guestId || req.headers['x-guest-id'] || req.body?.guestId;
+
+  if (session.userId) {
+    return requestingUserId && session.userId.toString() === requestingUserId;
+  }
+  if (session.guestId && requestingGuestId) {
+    return session.guestId === requestingGuestId;
+  }
+  return true;
+}
+
 export async function getSessionById(req, res, next) {
   try {
     const { id } = req.params;
@@ -39,6 +53,13 @@ export async function getSessionById(req, res, next) {
       return res.status(404).json({
         success: false,
         error: 'Accessibility session not found.',
+      });
+    }
+
+    if (!isAuthorizedForSession(session, req)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: You do not have permission to view this session.',
       });
     }
 
@@ -62,6 +83,13 @@ export async function updateChecklist(req, res, next) {
       return res.status(404).json({
         success: false,
         error: 'Accessibility session not found.',
+      });
+    }
+
+    if (!isAuthorizedForSession(session, req)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: You do not have permission to modify this session.',
       });
     }
 
@@ -96,6 +124,22 @@ export async function updateChecklist(req, res, next) {
 export async function deleteSession(req, res, next) {
   try {
     const { id } = req.params;
+    const session = await sessionRepo.findById(id);
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found or already deleted.',
+      });
+    }
+
+    if (!isAuthorizedForSession(session, req)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied: You do not have permission to delete this session.',
+      });
+    }
+
     const success = await sessionRepo.delete(id);
 
     if (!success) {
