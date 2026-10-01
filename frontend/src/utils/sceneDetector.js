@@ -76,7 +76,14 @@ export function detectSceneChange(video) {
  * @returns {string|null} base64 data URL
  */
 export function captureRepresentativeFrame(video, maxDimension = 1280) {
-  if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+  if (
+    !video ||
+    video.readyState < 2 || // HTMLMediaElement.HAVE_CURRENT_DATA
+    !video.videoWidth ||
+    !video.videoHeight ||
+    video.videoWidth <= 0 ||
+    video.videoHeight <= 0
+  ) {
     return null;
   }
 
@@ -95,9 +102,12 @@ export function captureRepresentativeFrame(video, maxDimension = 1280) {
     }
   }
 
+  if (width <= 0 || height <= 0) return null;
+
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
   ctx.drawImage(video, 0, 0, width, height);
 
   return canvas.toDataURL('image/jpeg', 0.85);

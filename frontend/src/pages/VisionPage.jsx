@@ -63,12 +63,18 @@ export default function VisionPage() {
   } = useAccessibility();
 
   // Camera & Stream State
-  const [cameraActive, setCameraActive] = useState(false);
-  const [cameraPermissionState, setCameraPermissionState] = useState('prompt'); // 'prompt', 'granted', 'denied', 'error'
+  // Distinct states: 'REQUESTING', 'ACTIVE', 'DENIED', 'UNAVAILABLE', 'ERROR', 'IDLE'
+  const [cameraStatus, setCameraStatus] = useState('REQUESTING');
   const [cameraError, setCameraError] = useState('');
+  const [cameraEnabled, setCameraEnabled] = useState(true);
+  const [facingMode, setFacingMode] = useState('environment'); // 'environment' | 'user'
+  const [retryTrigger, setRetryTrigger] = useState(0);
+  const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
   const [isAnalysisPaused, setIsAnalysisPaused] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [sceneStatus, setSceneStatus] = useState('IDLE'); // 'IDLE', 'OBSERVING', 'ANALYZING', 'STABLE'
+
+  const cameraActive = cameraStatus === 'ACTIVE';
 
   // Vision Analysis State
   const [analysis, setAnalysis] = useState(null);
@@ -105,7 +111,6 @@ export default function VisionPage() {
   const lastSpokenTimeRef = useRef(0);
   const fileInputRef = useRef(null);
   const liveRegionRef = useRef(null);
-  const hasInitializedCameraRef = useRef(false);
 
   const currentLang = getLanguageInfo(activeLanguage);
 
@@ -140,62 +145,20 @@ export default function VisionPage() {
   }, [currentSession, analysis, activeTab, setVoiceContext]);
 
   /**
-   * Initialize and request camera stream
+   * Start or restart camera stream
    */
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(() => {
+    setCameraEnabled(true);
     setCameraError('');
-    try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      });
-
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      setCameraActive(true);
-      setCameraPermissionState('granted');
-      setSceneStatus('OBSERVING');
-      resetSceneDetector();
-      speakAnnouncement(
-        'SARTHI Vision active. Point your camera at an object, document, or scene. SARTHI will automatically describe what it sees.'
-      );
-    } catch (err) {
-      console.warn('[SARTHI Vision] Camera access error:', err);
-      let errMessage = 'Unable to access camera on this device.';
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setCameraPermissionState('denied');
-        errMessage =
-          'Camera access is disabled. Please allow camera access in your browser settings to use SARTHI Vision.';
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setCameraPermissionState('error');
-        errMessage = 'No camera found on this device. You can upload an image or explore the verified sample document.';
-      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setCameraPermissionState('error');
-        errMessage = 'Camera is already in use by another application. Please close other camera apps and retry.';
-      }
-
-      setCameraError(errMessage);
-      setCameraActive(false);
-      speakAnnouncement(errMessage);
-    }
-  }, [speakAnnouncement]);
+    setRetryTrigger((prev) => prev + 1);
+  }, []);
 
   /**
-   * Stop camera stream and free hardware
+   * Stop camera stream and free hardware tracks
    */
   const stopCamera = useCallback(() => {
+    setCameraEnabled(false);
+    setCameraStatus('IDLE');
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -203,53 +166,240 @@ export default function VisionPage() {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    setCameraActive(false);
     setSceneStatus('IDLE');
     resetSceneDetector();
     speakAnnouncement('Camera stopped.');
   }, [speakAnnouncement]);
 
-  // Clean up hardware stream completely on unmount
+  /**
+   * Primary camera lifecycle management:
+   * Handles mount, StrictMode, unmount, facingMode changes, and retry triggers safely.
+   */
   useEffect(() => {
-    return () => {
+    if (!cameraEnabled) {
+      setCameraStatus('IDLE');
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
       }
-      if (analysisIntervalRef.current) {
-        clearInterval(analysisIntervalRef.current);
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
       }
-      stopSpeaking();
+      return;
+    }
+
+    let isCancelled = false;
+    let localStream = null;
+
+    async function initCamera() {
+      setCameraStatus('REQUESTING');
+      setCameraError('');
+
+      // 1. Check Secure Context (HTTPS or localhost)
+      const isLocalhost =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          window.location.hostname.endsWith('.localhost'));
+
+      const isSecure = typeof window !== 'undefined' && (window.isSecureContext || isLocalhost);
+
+      if (!isSecure) {
+        console.error('[SARTHI CAMERA DEBUG] Insecure context: camera requires HTTPS or localhost');
+        if (!isCancelled) {
+          setCameraStatus('UNAVAILABLE');
+          setCameraError('Camera access requires a secure context (HTTPS or localhost).');
+        }
+        return;
+      }
+
+      // 2. Check MediaDevices & getUserMedia Browser Support
+      if (
+        typeof navigator === 'undefined' ||
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getUserMedia !== 'function'
+      ) {
+        console.error('[SARTHI CAMERA DEBUG] navigator.mediaDevices.getUserMedia unavailable');
+        if (!isCancelled) {
+          setCameraStatus('UNAVAILABLE');
+          setCameraError('Camera access is not supported in this browser or context.');
+        }
+        return;
+      }
+
+      console.log('--- SARTHI CAMERA DEBUG ---');
+      console.log('Secure context:', window.isSecureContext);
+      console.log('getUserMedia:', 'available');
+      console.log('Facing mode requested:', facingMode);
+
+      // 3. getUserMedia with Two-Tier Fallback (Primary: requested facingMode; Fallback: video: true)
+      try {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: facingMode === 'environment' ? 'environment' : 'user',
+            },
+            audio: false,
+          });
+          console.log('[SARTHI CAMERA DEBUG] Primary getUserMedia succeeded with facingMode:', facingMode);
+        } catch (primaryErr) {
+          console.warn('[SARTHI CAMERA DEBUG] Primary facingMode constraints failed, falling back to video: true', primaryErr);
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+          console.log('[SARTHI CAMERA DEBUG] Fallback getUserMedia succeeded');
+        }
+
+        if (isCancelled) {
+          console.log('[SARTHI CAMERA DEBUG] Effect cancelled before attachment, stopping stream');
+          localStream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        // Clean up any stale active stream
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+        }
+        streamRef.current = localStream;
+
+        const videoEl = videoRef.current;
+        if (!videoEl) {
+          console.warn('[SARTHI CAMERA DEBUG] videoRef.current is null');
+          return;
+        }
+
+        // Critical DOM attributes for mobile & autoplay compliance
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        videoEl.autoplay = true;
+        videoEl.srcObject = localStream;
+
+        const videoTracks = localStream.getVideoTracks();
+        console.log('Permission result: granted');
+        console.log('Stream: obtained');
+        console.log('Video tracks:', videoTracks.length);
+        if (videoTracks.length > 0) {
+          console.log('Track state:', videoTracks[0].readyState);
+          console.log('Track enabled:', videoTracks[0].enabled);
+          console.log('Track label:', videoTracks[0].label);
+        }
+
+        // 4. Wait for loadedmetadata to verify dimensions > 0 before considering camera fully active
+        await new Promise((resolve) => {
+          if (videoEl.readyState >= 1 && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+            resolve();
+            return;
+          }
+          const onMetadata = () => {
+            videoEl.removeEventListener('loadedmetadata', onMetadata);
+            resolve();
+          };
+          videoEl.addEventListener('loadedmetadata', onMetadata);
+          setTimeout(() => {
+            videoEl.removeEventListener('loadedmetadata', onMetadata);
+            resolve();
+          }, 2500);
+        });
+
+        if (isCancelled) {
+          localStream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        // 5. Attempt video.play() safely
+        try {
+          await videoEl.play();
+          console.log('[SARTHI CAMERA DEBUG] video.play() successful');
+        } catch (playErr) {
+          console.warn('[SARTHI CAMERA DEBUG] video.play() warning:', playErr);
+        }
+
+        const width = videoEl.videoWidth || 0;
+        const height = videoEl.videoHeight || 0;
+        console.log(`Video dimensions: ${width}x${height}`);
+        console.log('Video readyState:', videoEl.readyState);
+        console.log('---------------------------');
+
+        if (!isCancelled) {
+          setVideoDimensions({ width, height });
+          setCameraStatus('ACTIVE');
+          setSceneStatus('OBSERVING');
+          resetSceneDetector();
+          speakAnnouncement(
+            'SARTHI Vision active. Point your camera at an object, document, or scene. SARTHI will automatically describe what it sees.'
+          );
+        }
+      } catch (err) {
+        if (isCancelled) return;
+        console.error('[SARTHI CAMERA DEBUG] Camera initialization error:', err);
+
+        let status = 'ERROR';
+        let msg = 'Unable to access camera on this device.';
+
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          status = 'DENIED';
+          msg = 'Camera permission is blocked. Please allow camera access in your browser settings.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          status = 'UNAVAILABLE';
+          msg = 'No camera found on this device. Please connect a camera or upload a photo.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          status = 'ERROR';
+          msg = 'Camera is already in use by another application. Please close other camera apps and retry.';
+        } else if (err.name === 'OverconstrainedError') {
+          status = 'UNAVAILABLE';
+          msg = 'Camera constraints could not be satisfied on this device.';
+        }
+
+        setCameraStatus(status);
+        setCameraError(msg);
+        speakAnnouncement(msg);
+      }
+    }
+
+    initCamera();
+
+    return () => {
+      isCancelled = true;
+      if (localStream) {
+        localStream.getTracks().forEach((track) => track.stop());
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
       resetSceneDetector();
     };
-  }, [stopSpeaking]);
-
-  // Auto-start camera once on initial mount
-  useEffect(() => {
-    if (!hasInitializedCameraRef.current) {
-      hasInitializedCameraRef.current = true;
-      startCamera();
-    }
-  }, [startCamera]);
+  }, [cameraEnabled, facingMode, retryTrigger, speakAnnouncement]);
 
   /**
    * Analyze captured video frame with Gemini Vision backend
    */
   const analyzeCurrentFrame = useCallback(
     async (force = false) => {
-      if (!videoRef.current || !cameraActive || isAnalyzingRef.current || isAnalysisPaused) {
+      const videoEl = videoRef.current;
+      if (!videoEl || cameraStatus !== 'ACTIVE' || isAnalyzingRef.current || isAnalysisPaused) {
+        return;
+      }
+
+      // Check valid video dimensions & readyState >= 2 (HAVE_CURRENT_DATA)
+      if (videoEl.readyState < 2 || !videoEl.videoWidth || !videoEl.videoHeight) {
         return;
       }
 
       // 1. Scene change detection (unless explicitly forced by user/voice command)
       if (!force) {
-        const { hasChanged } = detectSceneChange(videoRef.current);
+        const { hasChanged } = detectSceneChange(videoEl);
         if (!hasChanged && analysis) {
           setSceneStatus('STABLE');
           return;
         }
       }
 
-      const frameBase64 = captureRepresentativeFrame(videoRef.current, 1280);
+      const frameBase64 = captureRepresentativeFrame(videoEl, 1280);
       if (!frameBase64) return;
 
       isAnalyzingRef.current = true;
@@ -293,24 +443,25 @@ export default function VisionPage() {
         }
       } catch (err) {
         console.warn('[SARTHI Vision] Live frame analysis error:', err.message);
-        // Non-intrusive warning so the feed continues running smoothly
-        setAnalysisError(err.message || 'Vision analysis temporarily unavailable.');
+        // AI failure must NEVER turn camera black or stop stream!
+        setAnalysisError('AI analysis temporarily unavailable.');
+        setSceneStatus('OBSERVING');
       } finally {
         isAnalyzingRef.current = false;
         setAnalyzing(false);
       }
     },
-    [cameraActive, isAnalysisPaused, analysis, activeLanguage, user, announce, autoSpeak, speakText]
+    [cameraStatus, isAnalysisPaused, analysis, activeLanguage, user, announce, autoSpeak, speakText]
   );
 
   /**
-   * Periodic automatic analysis timer (polls every 3 seconds)
+   * Periodic automatic analysis timer (polls every 3.5 seconds)
    */
   useEffect(() => {
     if (cameraActive && !isAnalysisPaused) {
       analysisIntervalRef.current = setInterval(() => {
         analyzeCurrentFrame(false);
-      }, 3000);
+      }, 3500);
     } else {
       if (analysisIntervalRef.current) {
         clearInterval(analysisIntervalRef.current);
@@ -623,26 +774,31 @@ export default function VisionPage() {
               LEFT COLUMN: LARGE LIVE CAMERA VIEWPORT (7 COLS)
               ======================================================== */}
           <div className="lg:col-span-7 space-y-3">
-            <div className="bg-black rounded-3xl border-2 border-slate-800 overflow-hidden relative shadow-2xl flex flex-col items-center justify-center min-h-[380px] sm:min-h-[480px] lg:min-h-[520px]">
+            <div className="relative w-full aspect-[4/3] sm:aspect-video min-h-[380px] sm:min-h-[480px] lg:min-h-[520px] bg-slate-950 rounded-3xl border-2 border-slate-800 overflow-hidden shadow-2xl flex items-center justify-center">
               {/* Active Video Feed */}
               <video
                 ref={videoRef}
                 autoPlay
                 playsInline
                 muted
-                className={`w-full h-full object-cover min-h-[380px] sm:min-h-[480px] lg:min-h-[520px] bg-black ${
+                className={`w-full h-full object-cover aspect-[4/3] sm:aspect-video bg-black rounded-3xl ${
                   cameraActive ? 'block' : 'hidden'
                 }`}
                 aria-label="Live camera feed for SARTHI Vision"
               />
 
+              {/* Subtle Scanning Indicator when analyzing (Non-blocking: live camera remains 100% visible) */}
+              {analyzing && cameraActive && (
+                <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 via-amber-300 to-amber-500 animate-pulse z-10" />
+              )}
+
               {/* Uploaded Snapshot Preview (If user chose to upload a file) */}
               {!cameraActive && uploadedImagePreview && (
-                <div className="relative w-full h-full">
+                <div className="relative w-full h-full flex items-center justify-center">
                   <img
                     src={uploadedImagePreview}
                     alt="Uploaded scene inspected by SARTHI Vision"
-                    className="w-full max-h-[520px] object-contain bg-black"
+                    className="w-full max-h-[520px] object-contain bg-black rounded-3xl"
                   />
                   <div className="absolute top-4 left-4 bg-black/80 backdrop-blur px-3 py-1.5 rounded-full text-xs text-amber-300 font-bold border border-amber-500/30">
                     Uploaded Photo Analysis
@@ -651,8 +807,8 @@ export default function VisionPage() {
               )}
 
               {/* Sample Document Demo Indicator */}
-              {!cameraActive && !uploadedImagePreview && analysis && (
-                <div className="p-8 text-center space-y-3">
+              {!cameraActive && !uploadedImagePreview && analysis && cameraStatus === 'IDLE' && (
+                <div className="p-8 text-center space-y-4 max-w-md">
                   <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
                     <FileText className="w-10 h-10" />
                   </div>
@@ -662,26 +818,145 @@ export default function VisionPage() {
                       National Higher Education Grant Notice 2026. Point camera to return to live view.
                     </p>
                   </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 mx-auto shadow-lg shadow-brand-500/20"
+                    >
+                      <Video className="w-4 h-4" />
+                      <span>Return to Live Camera</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Camera Paused / Permission Denied State */}
-              {!cameraActive && !uploadedImagePreview && !analysis && (
+              {/* Connecting / Requesting Camera State */}
+              {!cameraActive && !uploadedImagePreview && cameraStatus === 'REQUESTING' && (
+                <div className="p-8 text-center space-y-4 max-w-md">
+                  <div className="w-16 h-16 rounded-full bg-brand-500/10 border-2 border-brand-500/30 flex items-center justify-center mx-auto text-brand-400">
+                    <div className="w-8 h-8 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-100 text-lg">Connecting Camera...</h2>
+                    <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                      Allow camera access to use SARTHI Vision.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Camera Permission Denied State */}
+              {!cameraActive && !uploadedImagePreview && cameraStatus === 'DENIED' && (
+                <div className="p-8 text-center space-y-4 max-w-md">
+                  <div className="w-16 h-16 rounded-full bg-rose-500/10 border-2 border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+                    <VideoOff className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-100 text-lg">Camera Access Disabled</h2>
+                    <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                      Camera permission is blocked. Please allow camera access in your browser settings.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="px-5 py-3 bg-brand-600 hover:bg-brand-500 text-white font-extrabold rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-brand-500/20 focus:ring-4 focus:ring-amber-400"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Try Again</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={loadSampleDocument}
+                      className="px-4 py-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl font-bold text-xs flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>Try Sample</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Camera Unavailable State (Unsupported browser / no device / insecure context) */}
+              {!cameraActive && !uploadedImagePreview && cameraStatus === 'UNAVAILABLE' && (
+                <div className="p-8 text-center space-y-4 max-w-md">
+                  <div className="w-16 h-16 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+                    <AlertTriangle className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-100 text-lg">Camera Unavailable</h2>
+                    <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                      {cameraError || 'Camera access is not supported in this browser or context.'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="px-5 py-3 bg-brand-600 hover:bg-brand-500 text-white font-extrabold rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-brand-500/20 focus:ring-4 focus:ring-amber-400"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Try Again</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={loadSampleDocument}
+                      className="px-4 py-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl font-bold text-xs flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>Try Sample</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Camera Hardware Error State */}
+              {!cameraActive && !uploadedImagePreview && cameraStatus === 'ERROR' && (
+                <div className="p-8 text-center space-y-4 max-w-md">
+                  <div className="w-16 h-16 rounded-full bg-rose-500/10 border-2 border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+                    <AlertTriangle className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-slate-100 text-lg">Camera Error</h2>
+                    <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                      {cameraError || 'Unable to access camera on this device.'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="px-5 py-3 bg-brand-600 hover:bg-brand-500 text-white font-extrabold rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-brand-500/20 focus:ring-4 focus:ring-amber-400"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Try Again</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={loadSampleDocument}
+                      className="px-4 py-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl font-bold text-xs flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>Try Sample</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Camera Paused / Idle State */}
+              {!cameraActive && !uploadedImagePreview && !analysis && cameraStatus === 'IDLE' && (
                 <div className="p-8 text-center space-y-4 max-w-md">
                   <div className="w-20 h-20 rounded-full bg-slate-900 border-2 border-dashed border-slate-700 flex items-center justify-center mx-auto text-slate-500">
                     <VideoOff className="w-9 h-9" />
                   </div>
                   <div>
-                    <h2 className="font-bold text-slate-100 text-lg">
-                      {cameraPermissionState === 'denied' ? 'Camera Access Disabled' : 'Camera is Currently Paused'}
-                    </h2>
+                    <h2 className="font-bold text-slate-100 text-lg">Camera is Currently Paused</h2>
                     <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                      {cameraPermissionState === 'denied'
-                        ? 'Camera access is needed so SARTHI can describe what is in front of you. Please allow camera permissions in your browser settings.'
-                        : 'Start the live camera so SARTHI can continuously observe and describe what you hold up.'}
+                      Start the live camera so SARTHI can continuously observe and describe what you hold up.
                     </p>
                   </div>
-
                   <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                     <button
                       type="button"
@@ -689,7 +964,7 @@ export default function VisionPage() {
                       className="px-5 py-3 bg-brand-600 hover:bg-brand-500 text-white font-extrabold rounded-xl text-sm flex items-center gap-2 shadow-lg shadow-brand-500/20 focus:ring-4 focus:ring-amber-400"
                     >
                       <Video className="w-4 h-4" />
-                      <span>{cameraPermissionState === 'denied' ? 'Retry Camera Permission' : 'Start Live Camera'}</span>
+                      <span>Start Live Camera</span>
                     </button>
                     <button
                       type="button"
@@ -709,15 +984,27 @@ export default function VisionPage() {
                   {/* Top-Left Live Status Pill */}
                   <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-slate-950/85 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-slate-700/80 text-xs">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                    <span className="font-extrabold text-emerald-300">Live Vision Active</span>
+                    <span className="font-extrabold text-emerald-300">Live Camera</span>
                     <span className="text-slate-500">|</span>
                     <span className="text-[11px] text-slate-300 font-medium">
-                      {analyzing ? '🔍 Analyzing Scene...' : sceneStatus === 'STABLE' ? '👁 Scene Stable' : 'Point at anything'}
+                      {analyzing ? '🔍 Analyzing Scene...' : sceneStatus === 'STABLE' ? '👁 Scene Stable' : 'Active'}
                     </span>
                   </div>
 
-                  {/* Top-Right Pause/Resume & Re-analyze Controls */}
+                  {/* Top-Right: Camera Switch, Pause/Resume & Re-analyze Controls */}
                   <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                    {/* Switch Camera */}
+                    <button
+                      type="button"
+                      onClick={() => setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'))}
+                      className="px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md bg-slate-900/85 text-slate-200 border border-slate-700 hover:bg-slate-800 transition-all flex items-center gap-1.5 focus:ring-2 focus:ring-amber-400"
+                      aria-label={`Switch camera (currently ${facingMode === 'environment' ? 'rear' : 'front'})`}
+                      title={`Switch to ${facingMode === 'environment' ? 'front' : 'rear'} camera`}
+                    >
+                      <RotateCcw className="w-3 h-3 text-amber-400" />
+                      <span className="hidden sm:inline">{facingMode === 'environment' ? 'Front Cam' : 'Back Cam'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => setIsAnalysisPaused(!isAnalysisPaused)}
@@ -749,7 +1036,12 @@ export default function VisionPage() {
                   <div className="absolute inset-x-4 bottom-4 z-10 flex items-center justify-between text-[11px] text-slate-300 bg-slate-950/75 backdrop-blur px-3.5 py-1.5 rounded-xl border border-slate-800">
                     <span className="flex items-center gap-1.5">
                       <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                      Automatic scene analysis every 3s
+                      <span>Automatic scene analysis every 3.5s</span>
+                      {videoDimensions.width > 0 && (
+                        <span className="text-slate-500 hidden sm:inline">
+                          ({videoDimensions.width}x{videoDimensions.height})
+                        </span>
+                      )}
                     </span>
                     <button
                       type="button"
@@ -757,14 +1049,14 @@ export default function VisionPage() {
                       className="text-rose-400 hover:text-rose-300 font-bold flex items-center gap-1"
                     >
                       <VideoOff className="w-3.5 h-3.5" />
-                      Turn off camera
+                      <span>Turn off camera</span>
                     </button>
                   </div>
                 </>
               )}
 
-              {/* Analysis Loading Spinner Overlay */}
-              {analyzing && (
+              {/* Analysis Loading Spinner Overlay ONLY when camera is not live (e.g. uploading photo) */}
+              {analyzing && !cameraActive && (
                 <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center z-20 pointer-events-none transition-all">
                   <div className="w-10 h-10 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-2" />
                   <p className="text-sm font-bold text-white tracking-wide">Observing scene with SARTHI Vision...</p>
@@ -772,8 +1064,8 @@ export default function VisionPage() {
               )}
             </div>
 
-            {/* Error Banner */}
-            {cameraError && (
+            {/* Camera Error Banner */}
+            {cameraError && cameraStatus !== 'ACTIVE' && (
               <div
                 role="alert"
                 className="p-3.5 rounded-2xl bg-rose-950/90 border border-rose-600 text-rose-200 text-xs font-medium flex items-center justify-between gap-3"
@@ -785,6 +1077,26 @@ export default function VisionPage() {
                   className="px-3 py-1 bg-rose-800 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shrink-0"
                 >
                   Retry
+                </button>
+              </div>
+            )}
+
+            {/* AI Analysis Notice Banner - Shows if AI temporarily fails, while camera stays live */}
+            {analysisError && cameraActive && (
+              <div
+                role="status"
+                className="p-3 rounded-2xl bg-amber-950/80 border border-amber-600/50 text-amber-200 text-xs font-medium flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>{analysisError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => analyzeCurrentFrame(true)}
+                  className="px-2.5 py-1 bg-amber-800/80 hover:bg-amber-700 text-amber-100 rounded-lg text-xs font-bold shrink-0"
+                >
+                  Retry AI
                 </button>
               </div>
             )}
@@ -863,6 +1175,16 @@ export default function VisionPage() {
                       )}
                     </div>
                   </>
+                ) : analysisError ? (
+                  <div className="py-8 text-center text-amber-300 space-y-2">
+                    <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+                      <AlertTriangle className="w-5 h-5" />
+                    </div>
+                    <p className="text-sm font-bold text-amber-200">AI analysis temporarily unavailable.</p>
+                    <p className="text-xs text-slate-400">
+                      Live camera feed is running smoothly. SARTHI will automatically retry analyzing the scene.
+                    </p>
+                  </div>
                 ) : (
                   <div className="py-8 text-center text-slate-400 space-y-2">
                     <p className="text-sm font-medium">Hold an object, document, or label in front of the camera.</p>
