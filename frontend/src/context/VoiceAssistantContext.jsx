@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api.js';
 import { useAccessibility } from './AccessibilityContext.jsx';
 import { getWakeWordProvider } from '../services/voice/wakeWordProvider.js';
 
@@ -137,7 +137,7 @@ export const VoiceAssistantProvider = ({ children }) => {
           language: activeLangRef.current || 'en',
         };
 
-        const res = await axios.post('/api/accessibility/voice', payload);
+        const res = await api.post('/accessibility/voice', payload);
         const data = res.data;
 
         if (data.success && data.spokenResponse) {
@@ -216,8 +216,22 @@ export const VoiceAssistantProvider = ({ children }) => {
    * Initialize Wake Word Provider and wire events
    */
   useEffect(() => {
+    const langMap = {
+      hi: 'hi-IN',
+      mr: 'mr-IN',
+      gu: 'gu-IN',
+      bn: 'bn-IN',
+      ta: 'ta-IN',
+      te: 'te-IN',
+      kn: 'kn-IN',
+      ml: 'ml-IN',
+      pa: 'pa-IN',
+      en: 'en-IN',
+    };
+    const targetLang = langMap[activeLanguage] || 'en-IN';
+
     const provider = getWakeWordProvider({
-      lang: activeLanguage === 'hi' ? 'hi-IN' : activeLanguage === 'mr' ? 'mr-IN' : 'en-US',
+      lang: targetLang,
       commandTimeoutMs: 8000,
     });
     providerRef.current = provider;
@@ -269,13 +283,6 @@ export const VoiceAssistantProvider = ({ children }) => {
     }
 
     try {
-      // Request mic permission explicitly
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Close temporary stream immediately; provider manages SpeechRecognition
-        stream.getTracks().forEach((track) => track.stop());
-      }
-
       setIsEnabled(true);
       setAssistantState('IDLE');
       providerRef.current.start();

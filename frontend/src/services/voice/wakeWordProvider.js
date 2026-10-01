@@ -71,8 +71,8 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
     this.restartTimer = null;
     this.commandTimer = null;
 
-    // Wake phrase regex: matches "Hey Sarthi", "Hi Sarthi", "Okay Sarthi", "Sarthi", "हे सारथी"
-    this.wakeWordRegex = /\b(hey|hi|hello|ok|okay)?\s*(sarthi|sarathi|sarathy|saarthi|सारथी)\b/i;
+    // Wake phrase regex: matches "Hey Sarthi", "Hi Sarthi", "Sarthi", "हे सारथी", and Indian English/Hindi variants
+    this.wakeWordRegex = /\b(hey|hi|hello|ok|okay|ay|aye|oye|arre|bolo|suno|सुनो|हे|अरे)?\s*(sarthi|sarathi|sarathy|saarthi|sharthi|sathi|saathi|sarthee|sarthe|सारथी|सार्थी|सारथि|सारथीजी)\b/i;
   }
 
   isSupported() {
@@ -147,12 +147,12 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
       this.recognition.onresult = (event) => {
         if (this.mode !== 'WAKE_WORD_LISTENING') return;
 
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+        let fullTranscript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          fullTranscript += ' ' + event.results[i][0].transcript;
         }
 
-        const trimmed = transcript.trim();
+        const trimmed = fullTranscript.trim();
         if (!trimmed) return;
 
         // Check for wake word
@@ -253,6 +253,8 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
       this.recognition.lang = this.options.lang;
 
       let finalTranscript = '';
+      let lastInterim = '';
+      let commandEmitted = false;
 
       this.recognition.onresult = (event) => {
         let interim = '';
@@ -264,11 +266,13 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
             interim += part;
           }
         }
+        lastInterim = interim;
 
         const currentText = (finalTranscript || interim).trim();
         this.emit('interimCommand', { transcript: currentText });
 
-        if (event.results[0].isFinal && currentText) {
+        if (event.results[0]?.isFinal && currentText && !commandEmitted) {
+          commandEmitted = true;
           if (this.commandTimer) clearTimeout(this.commandTimer);
           this.emit('command', { transcript: currentText });
         }
@@ -283,7 +287,13 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
 
       this.recognition.onend = () => {
         if (this.commandTimer) clearTimeout(this.commandTimer);
-        // If final transcript was collected, it was emitted. Return to wake mode.
+        const cleanCmd = (finalTranscript || lastInterim || '').trim();
+        if (!commandEmitted && cleanCmd) {
+          commandEmitted = true;
+          this.emit('command', { transcript: cleanCmd });
+        }
+
+        // Return to wake listening after brief pause
         setTimeout(() => {
           if (this.isActive && !this.isManualStop && this.mode !== 'PROCESSING') {
             this.startWakeWordListening();
