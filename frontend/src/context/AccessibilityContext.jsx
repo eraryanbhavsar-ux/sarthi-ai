@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext.jsx';
 import { SUPPORTED_LANGUAGES, getLanguageInfo } from '../services/languageRegistry.js';
 import { ttsManager } from '../services/voice/textToSpeechProvider.js';
@@ -25,11 +25,24 @@ export function AccessibilityProvider({ children }) {
   // Speech Synthesis state
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [speechState, setSpeechState] = useState('IDLE'); // 'IDLE' | 'PREPARING' | 'SPEAKING' | 'PAUSED' | 'STOPPED' | 'ERROR'
+  const [speechState, setSpeechState] = useState('IDLE'); // 'IDLE' | 'SPEAKING' | 'PAUSED' | 'STOPPED'
+  const [speechQueue, setSpeechQueue] = useState([]);
   const [speechRate, setSpeechRate] = useState(1.0);
   const [availableVoices, setAvailableVoices] = useState([]);
   const [ttsNotice, setTtsNotice] = useState('');
   const [currentSpokenLang, setCurrentSpokenLang] = useState('');
+
+  // Stable refs to prevent recreation of callbacks and consumer re-render loops
+  const activeLanguageRef = useRef(activeLanguage);
+  activeLanguageRef.current = activeLanguage;
+  const blindModeRef = useRef(blindMode);
+  blindModeRef.current = blindMode;
+  const voiceModeRef = useRef(voiceMode);
+  voiceModeRef.current = voiceMode;
+  const speechRateRef = useRef(speechRate);
+  speechRateRef.current = speechRate;
+  const availableVoicesRef = useRef(availableVoices);
+  availableVoicesRef.current = availableVoices;
 
   // Speech Recognition (STT) state
   const [isListening, setIsListening] = useState(false);
@@ -148,66 +161,61 @@ export function AccessibilityProvider({ children }) {
   }, []);
 
   // Announce messages to screen readers
-  const announce = (message) => {
+  const announce = useCallback((message) => {
+    if (!message) return;
     setLiveAnnouncement(message);
     setTimeout(() => setLiveAnnouncement(''), 4000);
-  };
+  }, []);
 
   /**
    * Find best matching voice dynamically without hardcoding specific voice names.
    */
-  const findBestVoice = (lang = activeLanguage) => {
-    return ttsManager.browserTTS.findVoice(lang, availableVoices);
-  };
+  const findBestVoice = useCallback((lang = null) => {
+    return ttsManager.browserTTS.findVoice(lang || activeLanguageRef.current, availableVoicesRef.current);
+  }, []);
 
-  const isVoiceAvailable = (lang = activeLanguage) => {
-    return ttsManager.browserTTS.hasVoice(lang, availableVoices);
-  };
+  const isVoiceAvailable = useCallback((lang = null) => {
+    return ttsManager.browserTTS.hasVoice(lang || activeLanguageRef.current, availableVoicesRef.current);
+  }, []);
 
-  const getVoiceStatus = (lang = activeLanguage) => {
-    return ttsManager.getVoiceStatus(lang, availableVoices);
-  };
+  const getVoiceStatus = useCallback((lang = null) => {
+    return ttsManager.getVoiceStatus(lang || activeLanguageRef.current, availableVoicesRef.current);
+  }, []);
 
-  const clearTtsNotice = () => setTtsNotice('');
+  const clearTtsNotice = useCallback(() => setTtsNotice(''), []);
 
-  // Text-To-Speech function with strict language validation & chunking
-  const speakText = async (text, lang = activeLanguage) => {
+  // Subscribe to Unified TTSManager state machine & queue
+  useEffect(() => {
+    const unsubscribe = ttsManager.subscribe((state, details) => {
+      setSpeechState(state);
+      setIsSpeaking(state === 'SPEAKING');
+      setIsPaused(state === 'PAUSED');
+      setSpeechQueue([...(ttsManager.speechQueue || [])]);
+      if (details?.error?.message) {
+        setTtsNotice(details.error.message);
+        setLiveAnnouncement(details.error.message);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // Text-To-Speech function with strict single-instance management & natural chunking
+  const speakText = useCallback(async (text, lang = null, options = {}) => {
     if (!text || !text.trim()) {
       return { success: false, error: 'No text provided to read.', code: 'EMPTY_TEXT' };
     }
 
-    const langInfo = getLanguageInfo(lang);
+    const targetLang = lang || activeLanguageRef.current;
+    const langInfo = getLanguageInfo(targetLang);
     setCurrentSpokenLang(langInfo.code);
-    clearTtsNotice();
+    setTtsNotice('');
 
     try {
-      setSpeechState('PREPARING');
-      setIsSpeaking(true);
-      setIsPaused(false);
-
       await ttsManager.speak(text, {
         lang: langInfo.code,
-        rate: speechRate,
-        voicesList: availableVoices,
-        onStateChange: (state, details) => {
-          setSpeechState(state);
-          if (state === 'SPEAKING') {
-            setIsSpeaking(true);
-            setIsPaused(false);
-          } else if (state === 'PAUSED') {
-            setIsPaused(true);
-          } else if (state === 'IDLE' || state === 'STOPPED') {
-            setIsSpeaking(false);
-            setIsPaused(false);
-          } else if (state === 'ERROR') {
-            setIsSpeaking(false);
-            setIsPaused(false);
-            if (details?.error?.message) {
-              setTtsNotice(details.error.message);
-              announce(details.error.message);
-            }
-          }
-        },
+        rate: speechRateRef.current,
+        voicesList: availableVoicesRef.current,
+        queue: options.queue || false,
       });
 
       return { success: true };
@@ -215,35 +223,33 @@ export function AccessibilityProvider({ children }) {
       console.warn('[AccessibilityContext] Speech playback notice:', err.message);
       const msg = err.message || `${langInfo.nativeName} voice is not available.`;
       setTtsNotice(msg);
-      announce(msg);
+      setLiveAnnouncement(msg);
       setIsSpeaking(false);
       setIsPaused(false);
-      setSpeechState('ERROR');
+      setSpeechState('STOPPED');
       return { success: false, error: msg, code: err.code || 'VOICE_NOT_AVAILABLE' };
     }
-  };
+  }, []);
 
-  const stopSpeaking = () => {
+  const stopSpeaking = useCallback(() => {
     ttsManager.stop();
     setIsSpeaking(false);
     setIsPaused(false);
     setSpeechState('STOPPED');
-    announce('Audio stopped.');
-  };
+    setSpeechQueue([]);
+  }, []);
 
-  const pauseSpeaking = () => {
+  const pauseSpeaking = useCallback(() => {
     ttsManager.pause();
     setIsPaused(true);
     setSpeechState('PAUSED');
-    announce('Audio paused.');
-  };
+  }, []);
 
-  const resumeSpeaking = () => {
+  const resumeSpeaking = useCallback(() => {
     ttsManager.resume();
     setIsPaused(false);
     setSpeechState('SPEAKING');
-    announce('Audio resumed.');
-  };
+  }, []);
 
   // Speech-To-Text (Microphone) functions
   const startListening = (onResultCallback, onErrorCallback) => {
@@ -354,6 +360,7 @@ export function AccessibilityProvider({ children }) {
       announce(msg);
       if (blindMode || voiceMode) speakText(msg, activeLanguage);
     } else if (key === 'activeLanguage') {
+      stopSpeaking();
       setActiveLanguage(value);
       prefObj.preferredLanguage = value;
       announce(`Language set to ${value}`);
@@ -362,12 +369,12 @@ export function AccessibilityProvider({ children }) {
   };
 
   // High-priority spoken status announcement for voice-first / blind mode
-  const speakAnnouncement = (message, forceSpeak = false) => {
+  const speakAnnouncement = useCallback((message, forceSpeak = false) => {
     announce(message);
-    if (blindMode || voiceMode || forceSpeak) {
-      speakText(message, activeLanguage);
+    if (blindModeRef.current || voiceModeRef.current || forceSpeak) {
+      speakText(message, activeLanguageRef.current);
     }
-  };
+  }, [announce, speakText]);
 
   return (
     <AccessibilityContext.Provider
@@ -401,6 +408,7 @@ export function AccessibilityProvider({ children }) {
         isSpeaking,
         isPaused,
         speechState,
+        speechQueue,
         speechRate,
         setSpeechRate,
         availableVoices,

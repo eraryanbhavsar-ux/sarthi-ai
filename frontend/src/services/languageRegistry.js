@@ -15,6 +15,20 @@
  *  11. ଓଡ଼ିଆ — Odia (or / or-IN)
  */
 
+export const LANGUAGE_CONFIG = {
+  en: { name: 'English', locale: 'en-IN', nativeName: 'English' },
+  hi: { name: 'Hindi', locale: 'hi-IN', nativeName: 'हिन्दी' },
+  mr: { name: 'Marathi', locale: 'mr-IN', nativeName: 'मराठी' },
+  gu: { name: 'Gujarati', locale: 'gu-IN', nativeName: 'ગુજરાતી' },
+  bn: { name: 'Bengali', locale: 'bn-IN', nativeName: 'বাংলা' },
+  ta: { name: 'Tamil', locale: 'ta-IN', nativeName: 'தமிழ்' },
+  te: { name: 'Telugu', locale: 'te-IN', nativeName: 'తెలుగు' },
+  kn: { name: 'Kannada', locale: 'kn-IN', nativeName: 'ಕನ್ನಡ' },
+  ml: { name: 'Malayalam', locale: 'ml-IN', nativeName: 'മലയാളം' },
+  pa: { name: 'Punjabi', locale: 'pa-IN', nativeName: 'ਪੰਜਾਬੀ' },
+  or: { name: 'Odia', locale: 'or-IN', nativeName: 'ଓଡ଼ିଆ' },
+};
+
 export const SUPPORTED_LANGUAGES = [
   {
     code: 'en',

@@ -4,7 +4,7 @@ export const visionService = {
   /**
    * Analyze image (from camera snapshot base64 or file upload)
    */
-  async analyzeVision({ file, imageBase64, language = 'en', guestId, capturedViaCamera = false, fileName }) {
+  async analyzeVision({ file, imageBase64, language = 'en', guestId, capturedViaCamera = false, fileName, signal }) {
     if (file) {
       const formData = new FormData();
       formData.append('file', file);
@@ -15,6 +15,7 @@ export const visionService = {
 
       const res = await api.post('/vision/analyze', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        signal,
       });
       return res.data;
     } else {
@@ -24,7 +25,7 @@ export const visionService = {
         guestId,
         capturedViaCamera,
         fileName,
-      });
+      }, { signal });
       return res.data;
     }
   },

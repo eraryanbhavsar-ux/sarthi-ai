@@ -374,19 +374,18 @@ export async function processVoice(req, res, next) {
  * Check if backend Cloud TTS is configured with an API key
  */
 export async function getTtsStatus(req, res) {
-  const configured = Boolean(process.env.TTS_API_KEY || process.env.GOOGLE_TTS_API_KEY);
+  const hasCustomKey = Boolean(process.env.TTS_API_KEY || process.env.GOOGLE_TTS_API_KEY);
   return res.status(200).json({
     success: true,
-    configured,
-    provider: configured ? 'google_cloud_tts' : null,
-    message: configured
-      ? 'Backend Cloud TTS is active and ready for regional speech synthesis.'
-      : 'Backend Cloud TTS is not configured (requires TTS_API_KEY in backend .env). Browser TTS remains primary.',
+    configured: true,
+    provider: hasCustomKey ? 'google_cloud_tts' : 'regional_stream',
+    supportedLanguages: ['en', 'hi', 'mr', 'gu', 'bn', 'ta', 'te', 'kn', 'ml', 'pa'],
+    message: 'Backend Regional Text-to-Speech is active and ready for regional speech synthesis.',
   });
 }
 
 /**
- * Synthesize speech on the server via Cloud TTS
+ * Synthesize speech on the server via Cloud TTS or high-fidelity regional stream
  */
 export async function synthesizeSpeech(req, res, next) {
   try {
@@ -398,48 +397,135 @@ export async function synthesizeSpeech(req, res, next) {
       });
     }
 
+    const langCode = (language || locale.split('-')[0] || 'en').toLowerCase().trim();
+
+    // 1. Try Custom Google Cloud TTS API Key if explicitly configured
     const apiKey = process.env.TTS_API_KEY || process.env.GOOGLE_TTS_API_KEY;
-    if (!apiKey) {
-      return res.status(503).json({
+    if (apiKey) {
+      try {
+        const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+        const payload = {
+          input: { text },
+          voice: {
+            languageCode: locale,
+            ssmlGender: 'NEUTRAL',
+          },
+          audioConfig: {
+            audioEncoding: 'MP3',
+          },
+        };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.audioContent) {
+            return res.status(200).json({
+              success: true,
+              audioBase64: data.audioContent,
+              language: langCode,
+              locale,
+              provider: 'cloud_tts',
+            });
+          }
+        }
+      } catch (cloudErr) {
+        console.warn('[Backend TTS] Cloud TTS API attempt failed, falling back to regional stream:', cloudErr.message);
+      }
+    }
+
+    // 2. High-fidelity Regional Speech Stream (Hindi, Marathi, Gujarati, Bengali, Tamil, Telugu, Kannada, Malayalam, Punjabi, English)
+    const streamSupported = ['en', 'hi', 'mr', 'gu', 'bn', 'ta', 'te', 'kn', 'ml', 'pa'];
+    if (streamSupported.includes(langCode)) {
+      try {
+        // Split text by natural sentence boundaries (. ! ? । ॥ \n) to preserve intonation & cadence
+        const cleanText = text.replace(/[*#_`~]/g, '').trim();
+        const sentenceRegex = /[^.!?;\n।॥]+(?:[.!?;\n।॥]+|$)/g;
+        const sentences = [];
+        let match;
+        while ((match = sentenceRegex.exec(cleanText)) !== null) {
+          const s = match[0].trim();
+          if (s) sentences.push(s);
+        }
+        if (sentences.length === 0) sentences.push(cleanText);
+
+        const chunks = [];
+        for (const sentence of sentences) {
+          if (sentence.length <= 160) {
+            chunks.push(sentence);
+          } else {
+            // Split long sentence by words without exceeding 160 chars
+            const words = sentence.split(/\s+/);
+            let buffer = '';
+            for (const w of words) {
+              if ((buffer + ' ' + w).length > 160) {
+                if (buffer.trim()) chunks.push(buffer.trim());
+                buffer = w;
+              } else {
+                buffer = buffer ? buffer + ' ' + w : w;
+              }
+            }
+            if (buffer.trim()) chunks.push(buffer.trim());
+          }
+        }
+
+        const buffers = [];
+        for (const chunk of chunks) {
+          if (!chunk) continue;
+          const streamUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(
+            chunk
+          )}&tl=${langCode}&client=tw-ob`;
+
+          const streamRes = await fetch(streamUrl, {
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+          });
+
+          if (!streamRes.ok) {
+            throw new Error(`TTS stream responded with status ${streamRes.status}`);
+          }
+
+          const arrayBuffer = await streamRes.arrayBuffer();
+          buffers.push(Buffer.from(arrayBuffer));
+        }
+
+        if (buffers.length > 0) {
+          const totalBuffer = Buffer.concat(buffers);
+          return res.status(200).json({
+            success: true,
+            audioBase64: totalBuffer.toString('base64'),
+            language: langCode,
+            locale,
+            provider: 'regional_stream',
+          });
+        }
+      } catch (streamErr) {
+        console.error('[Backend TTS] Regional stream synthesis error:', streamErr.message);
+        return res.status(502).json({
+          success: false,
+          error: `Regional speech synthesis failed: ${streamErr.message}`,
+        });
+      }
+    }
+
+    // 3. Odia or unsupported regional codes
+    if (langCode === 'or') {
+      return res.status(422).json({
         success: false,
-        configured: false,
-        code: 'TTS_KEY_REQUIRED',
-        message: 'Backend Cloud Text-to-Speech is not configured. Please configure TTS_API_KEY in backend .env or use browser speech.',
+        code: 'VOICE_NOT_AVAILABLE_ODIA',
+        message: 'Odia speech synthesis requires a local Odia voice pack installed on your operating system (e.g. Windows OneCore or Android Speech Services).',
       });
     }
 
-    const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
-    const payload = {
-      input: { text },
-      voice: {
-        languageCode: locale,
-        ssmlGender: 'NEUTRAL',
-      },
-      audioConfig: {
-        audioEncoding: 'MP3',
-      },
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      return res.status(response.status).json({
-        success: false,
-        error: errData.error?.message || 'Cloud TTS synthesis failed.',
-      });
-    }
-
-    const data = await response.json();
-    return res.status(200).json({
-      success: true,
-      audioBase64: data.audioContent,
-      language,
-      locale,
+    return res.status(400).json({
+      success: false,
+      error: `Unsupported language code for TTS: ${langCode}`,
     });
   } catch (error) {
     next(error);

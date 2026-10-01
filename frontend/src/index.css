@@ -223,3 +223,51 @@ html.low-vision-mode div[class*="border"] {
   border-width: 2px !important;
 }
 
+/* ========================================================
+   UPI-STYLE ACCESSIBILITY SCANNER ANIMATIONS
+   ======================================================== */
+@keyframes upiScanLine {
+  0% {
+    top: 6%;
+    opacity: 0.35;
+  }
+  50% {
+    top: 92%;
+    opacity: 1;
+  }
+  100% {
+    top: 6%;
+    opacity: 0.35;
+  }
+}
+
+.animate-scan-line {
+  animation: upiScanLine 2.2s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(251, 191, 36, 0.4), inset 0 0 15px rgba(251, 191, 36, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(251, 191, 36, 0.7), inset 0 0 25px rgba(251, 191, 36, 0.35);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2.5s ease-in-out infinite;
+}
+
+/* Reduced Motion Accessibility for Scanner */
+@media (prefers-reduced-motion: reduce) {
+  .animate-scan-line {
+    animation: none !important;
+    opacity: 0.45 !important;
+    top: 50% !important;
+  }
+  .animate-pulse-glow {
+    animation: none !important;
+    box-shadow: 0 0 10px rgba(251, 191, 36, 0.4) !important;
+  }
+}
+
