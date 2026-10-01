@@ -4,6 +4,9 @@
   "description": "SARTHI - Understand. Hear. Translate. Act. AI for Accessibility & Inclusion",
   "private": true,
   "scripts": {
+    "start": "npm --prefix backend start",
+    "build": "npm --prefix backend install",
+    "postinstall": "npm --prefix backend install",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "build:frontend": "cd frontend && npm run build",
