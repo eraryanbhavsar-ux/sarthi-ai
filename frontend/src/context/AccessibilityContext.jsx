@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext.jsx';
+import { SUPPORTED_LANGUAGES, getLanguageInfo } from '../services/languageRegistry.js';
+import { ttsManager } from '../services/voice/textToSpeechProvider.js';
 
 const AccessibilityContext = createContext(null);
 
@@ -23,6 +25,7 @@ export function AccessibilityProvider({ children }) {
   // Speech Synthesis state
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [speechState, setSpeechState] = useState('IDLE'); // 'IDLE' | 'PREPARING' | 'SPEAKING' | 'PAUSED' | 'STOPPED' | 'ERROR'
   const [speechRate, setSpeechRate] = useState(1.0);
   const [availableVoices, setAvailableVoices] = useState([]);
   const [ttsNotice, setTtsNotice] = useState('');
@@ -152,193 +155,94 @@ export function AccessibilityProvider({ children }) {
 
   /**
    * Find best matching voice dynamically without hardcoding specific voice names.
-   * Prefer mr-IN or any available Marathi voice.
    */
   const findBestVoice = (lang = activeLanguage) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
-    const voices = availableVoices.length > 0 ? availableVoices : window.speechSynthesis.getVoices() || [];
-    if (!voices || voices.length === 0) return null;
-
-    const target = (lang || '').toLowerCase().trim();
-    const prefix = target.split(/[-_]/)[0]; // 'mr', 'hi', 'en', 'gu', 'ta', 'es'
-
-    // 1. Exact BCP-47 match (e.g. 'mr-in', 'mr_in', 'hi-in')
-    const exact = voices.find((v) => v.lang.toLowerCase().replace('_', '-') === target);
-    if (exact) return exact;
-
-    // 2. Prefix match on voice language tag
-    const prefixMatch = voices.find((v) => {
-      const vLang = v.lang.toLowerCase().replace('_', '-');
-      return vLang === prefix || vLang.startsWith(`${prefix}-`);
-    });
-    if (prefixMatch) return prefixMatch;
-
-    // 3. Match by language keyword in voice name
-    const keywordMatch = voices.find((v) => {
-      const vName = (v.name || '').toLowerCase();
-      if (prefix === 'mr' && (vName.includes('marathi') || vName.includes('mr-in') || vName.includes('mr_in'))) return true;
-      if (prefix === 'hi' && (vName.includes('hindi') || vName.includes('hi-in') || vName.includes('hi_in'))) return true;
-      if (prefix === 'gu' && vName.includes('gujarati')) return true;
-      if (prefix === 'ta' && vName.includes('tamil')) return true;
-      if (prefix === 'es' && vName.includes('spanish')) return true;
-      return false;
-    });
-    if (keywordMatch) return keywordMatch;
-
-    return null;
+    return ttsManager.browserTTS.findVoice(lang, availableVoices);
   };
 
   const isVoiceAvailable = (lang = activeLanguage) => {
-    return Boolean(findBestVoice(lang));
+    return ttsManager.browserTTS.hasVoice(lang, availableVoices);
   };
 
   const getVoiceStatus = (lang = activeLanguage) => {
-    const voice = findBestVoice(lang);
-    const prefix = (lang || '').toLowerCase().split(/[-_]/)[0];
-    const langNames = {
-      mr: 'Marathi',
-      hi: 'Hindi',
-      gu: 'Gujarati',
-      ta: 'Tamil',
-      es: 'Spanish',
-      en: 'English',
-    };
-    const langName = langNames[prefix] || (lang ? lang.toUpperCase() : 'Selected language');
-
-    if (voice) {
-      return {
-        available: true,
-        voiceName: voice.name,
-        lang: voice.lang,
-        message: `${langName} voice ready: ${voice.name}`,
-      };
-    }
-    return {
-      available: false,
-      voiceName: null,
-      lang,
-      message: `${langName} voice is not available on this device/browser.`,
-    };
+    return ttsManager.getVoiceStatus(lang, availableVoices);
   };
 
   const clearTtsNotice = () => setTtsNotice('');
 
-  // Text-To-Speech function with strict language validation
-  const speakText = (text, lang = activeLanguage) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      const msg = 'Speech synthesis is not supported on this browser.';
-      setTtsNotice(msg);
-      announce(msg);
-      return { success: false, error: msg, code: 'TTS_UNSUPPORTED' };
-    }
-
+  // Text-To-Speech function with strict language validation & chunking
+  const speakText = async (text, lang = activeLanguage) => {
     if (!text || !text.trim()) {
       return { success: false, error: 'No text provided to read.', code: 'EMPTY_TEXT' };
     }
 
-    const prefix = (lang || '').toLowerCase().split(/[-_]/)[0];
-    const voice = findBestVoice(lang);
+    const langInfo = getLanguageInfo(lang);
+    setCurrentSpokenLang(langInfo.code);
+    clearTtsNotice();
 
-    // CRITICAL: If no voice exists for the requested language, DO NOT speak in English or pretend it works
-    if (!voice && (prefix === 'mr' || prefix === 'hi')) {
-      const msg = prefix === 'mr'
-        ? 'Marathi voice is not available on this device/browser.'
-        : 'Hindi voice is not available on this device/browser.';
-      setTtsNotice(msg);
-      announce(msg);
-
-      try {
-        window.speechSynthesis.cancel();
-      } catch (_) {}
-      setIsSpeaking(false);
-      setIsPaused(false);
-      return { success: false, error: msg, code: 'VOICE_NOT_AVAILABLE' };
-    }
-
-    // Clear previous notice
-    setTtsNotice('');
-    setCurrentSpokenLang(lang);
-
-    // Cancel any previous speech
     try {
-      window.speechSynthesis.cancel();
-    } catch (_) {}
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = speechRate;
-
-    if (voice) {
-      utterance.voice = voice;
-      utterance.lang = voice.lang || (prefix === 'mr' ? 'mr-IN' : prefix === 'hi' ? 'hi-IN' : 'en-US');
-    } else {
-      utterance.lang = 'en-US';
-    }
-
-    utterance.onstart = () => {
+      setSpeechState('PREPARING');
       setIsSpeaking(true);
       setIsPaused(false);
-      announce('Reading aloud started.');
-    };
 
-    utterance.onend = () => {
+      await ttsManager.speak(text, {
+        lang: langInfo.code,
+        rate: speechRate,
+        voicesList: availableVoices,
+        onStateChange: (state, details) => {
+          setSpeechState(state);
+          if (state === 'SPEAKING') {
+            setIsSpeaking(true);
+            setIsPaused(false);
+          } else if (state === 'PAUSED') {
+            setIsPaused(true);
+          } else if (state === 'IDLE' || state === 'STOPPED') {
+            setIsSpeaking(false);
+            setIsPaused(false);
+          } else if (state === 'ERROR') {
+            setIsSpeaking(false);
+            setIsPaused(false);
+            if (details?.error?.message) {
+              setTtsNotice(details.error.message);
+              announce(details.error.message);
+            }
+          }
+        },
+      });
+
+      return { success: true };
+    } catch (err) {
+      console.warn('[AccessibilityContext] Speech playback notice:', err.message);
+      const msg = err.message || `${langInfo.nativeName} voice is not available.`;
+      setTtsNotice(msg);
+      announce(msg);
       setIsSpeaking(false);
       setIsPaused(false);
-      announce('Reading aloud completed.');
-    };
-
-    utterance.onpause = () => {
-      setIsPaused(true);
-      announce('Reading aloud paused.');
-    };
-
-    utterance.onresume = () => {
-      setIsPaused(false);
-      announce('Reading aloud resumed.');
-    };
-
-    utterance.onerror = (e) => {
-      if (e.error !== 'canceled' && e.error !== 'interrupted') {
-        console.warn('Speech synthesis error:', e);
-        const errMsg = `Speech synthesis issue: ${e.error || 'playback interrupted'}`;
-        setTtsNotice(errMsg);
-      }
-      setIsSpeaking(false);
-      setIsPaused(false);
-    };
-
-    window.speechSynthesis.speak(utterance);
-    return { success: true };
+      setSpeechState('ERROR');
+      return { success: false, error: msg, code: err.code || 'VOICE_NOT_AVAILABLE' };
+    }
   };
 
   const stopSpeaking = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch (_) {}
-      setIsSpeaking(false);
-      setIsPaused(false);
-      announce('Audio stopped.');
-    }
+    ttsManager.stop();
+    setIsSpeaking(false);
+    setIsPaused(false);
+    setSpeechState('STOPPED');
+    announce('Audio stopped.');
   };
 
   const pauseSpeaking = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window && isSpeaking) {
-      try {
-        window.speechSynthesis.pause();
-        setIsPaused(true);
-        announce('Audio paused.');
-      } catch (_) {}
-    }
+    ttsManager.pause();
+    setIsPaused(true);
+    setSpeechState('PAUSED');
+    announce('Audio paused.');
   };
 
   const resumeSpeaking = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window && isPaused) {
-      try {
-        window.speechSynthesis.resume();
-        setIsPaused(false);
-        announce('Audio resumed.');
-      } catch (_) {}
-    }
+    ttsManager.resume();
+    setIsPaused(false);
+    setSpeechState('SPEAKING');
+    announce('Audio resumed.');
   };
 
   // Speech-To-Text (Microphone) functions
@@ -496,6 +400,7 @@ export function AccessibilityProvider({ children }) {
         resumeSpeaking,
         isSpeaking,
         isPaused,
+        speechState,
         speechRate,
         setSpeechRate,
         availableVoices,
@@ -504,6 +409,10 @@ export function AccessibilityProvider({ children }) {
         ttsNotice,
         clearTtsNotice,
         currentSpokenLang,
+        // Language Center & Registry
+        supportedLanguages: SUPPORTED_LANGUAGES,
+        getLanguageInfo,
+        currentLanguageInfo: getLanguageInfo(activeLanguage),
         // Speech Recognition
         startListening,
         stopListening,

@@ -119,52 +119,84 @@ Provide your output as a JSON object:
 
 export function buildTranslationPrompt(sessionData, targetLanguage) {
   const langNames = {
+    en: 'English (Indian English)',
     hi: 'Hindi (हिन्दी)',
     mr: 'Marathi (मराठी)',
     gu: 'Gujarati (ગુજરાતી)',
+    bn: 'Bengali (বাংলা)',
     ta: 'Tamil (தமிழ்)',
     te: 'Telugu (తెలుగు)',
-    bn: 'Bengali (বাংলা)',
     kn: 'Kannada (ಕನ್ನಡ)',
+    ml: 'Malayalam (മലയാളം)',
+    pa: 'Punjabi (ਪੰਜਾਬੀ)',
+    or: 'Odia (ଓଡ଼ିଆ)',
     es: 'Spanish (Español)',
-    fr: 'French (Français)',
-    en: 'English',
   };
 
   const targetLangLabel = langNames[targetLanguage] || targetLanguage;
 
   return `Translate and localize the following accessibility explanation into ${targetLangLabel}.
-Use natural, conversational, culturally respectful, and easy-to-understand phrasing. Avoid unnatural literal machine translations.
+Use natural, conversational, culturally respectful, and easy-to-understand phrasing in standard script. Avoid clumsy machine translations.
+
+CRITICAL FACTUAL PRESERVATION RULES:
+1. STRICTLY PRESERVE all dates, deadlines, times, numbers, monetary amounts (e.g. ₹ amounts), percentages, criteria (e.g., CGPA), and official portal links.
+2. DO NOT alter, invent, or omit factual requirements.
+3. Translate the entire user-facing response: simple explanation, key points, checklist actions, step-by-step guidance, deadlines, and required documents.
 
 INPUT DATA:
-Summary: ${sessionData.summary}
-Simple Explanation: ${sessionData.simpleExplanation}
+Title: ${sessionData.title || ''}
+Summary: ${sessionData.summary || ''}
+Simple Explanation: ${sessionData.simpleExplanation || ''}
 Key Points: ${JSON.stringify(sessionData.keyPoints || [])}
-Required Actions: ${JSON.stringify((sessionData.requiredActions || []).map(a => ({ id: a.id, text: a.text, explanation: a.explanation })))}
-Steps: ${JSON.stringify((sessionData.steps || []).map(s => ({ stepNumber: s.stepNumber, title: s.title, description: s.description })))}
+Required Actions: ${JSON.stringify((sessionData.requiredActions || []).map(a => ({ id: a.id, text: a.text, explanation: a.explanation, deadline: a.deadline })))}
+Steps: ${JSON.stringify((sessionData.steps || []).map(s => ({ stepNumber: s.stepNumber, title: s.title, description: s.description, tip: s.tip })))}
+Deadlines: ${JSON.stringify(sessionData.deadlines || [])}
+Required Documents: ${JSON.stringify(sessionData.requiredDocuments || [])}
+Important Warnings: ${JSON.stringify(sessionData.importantWarnings || [])}
+Missing Information: ${JSON.stringify(sessionData.missingInformation || [])}
+Visual Description: ${sessionData.visualDescription || ''}
 
-Provide your output as a JSON object:
+Provide your output as a valid JSON object matching this schema:
 {
   "language": "${targetLanguage}",
+  "title": "Translated document title in ${targetLangLabel}",
+  "summary": "Translated summary in ${targetLangLabel}",
   "simpleExplanation": "Translated explanation in ${targetLangLabel}",
-  "keyPoints": ["Translated key points"],
+  "keyPoints": ["Translated key points in ${targetLangLabel}"],
   "requiredActions": [
     {
       "id": "action-id",
-      "text": "Translated action text",
-      "explanation": "Translated action explanation",
-      "deadline": "",
+      "text": "Translated action text in ${targetLangLabel}",
+      "explanation": "Translated action explanation in ${targetLangLabel}",
+      "deadline": "Preserved deadline date/time",
       "completed": false
     }
   ],
   "steps": [
     {
       "stepNumber": 1,
-      "title": "Translated step title",
-      "description": "Translated step description",
-      "tip": ""
+      "title": "Translated step title in ${targetLangLabel}",
+      "description": "Translated step description in ${targetLangLabel}",
+      "tip": "Translated tip in ${targetLangLabel}"
     }
-  ]
+  ],
+  "deadlines": [
+    {
+      "date": "Exact preserved date and time",
+      "description": "Translated deadline description in ${targetLangLabel}",
+      "urgency": "high"
+    }
+  ],
+  "requiredDocuments": [
+    {
+      "name": "Translated official document name in ${targetLangLabel}",
+      "purpose": "Translated purpose in ${targetLangLabel}",
+      "isMandatory": true
+    }
+  ],
+  "importantWarnings": ["Translated warnings in ${targetLangLabel}"],
+  "missingInformation": ["Translated missing details in ${targetLangLabel}"],
+  "visualDescription": "Translated visual scene description in ${targetLangLabel}"
 }`;
 }
 

@@ -169,10 +169,17 @@ export async function translateContent(req, res, next) {
     const filtered = existingTranslations.filter(t => t.language !== targetLanguage);
     filtered.push({
       language: targetLanguage,
+      title: translated.title || session.title,
+      summary: translated.summary || session.summary,
       simpleExplanation: translated.simpleExplanation,
-      keyPoints: translated.keyPoints,
-      requiredActions: translated.requiredActions,
-      steps: translated.steps,
+      keyPoints: translated.keyPoints || [],
+      requiredActions: translated.requiredActions || [],
+      steps: translated.steps || [],
+      deadlines: translated.deadlines || session.deadlines || [],
+      requiredDocuments: translated.requiredDocuments || session.requiredDocuments || [],
+      importantWarnings: translated.importantWarnings || session.importantWarnings || [],
+      missingInformation: translated.missingInformation || session.missingInformation || [],
+      visualDescription: translated.visualDescription || session.visualDescription || '',
       translatedAt: new Date(),
     });
 
@@ -357,6 +364,82 @@ export async function processVoice(req, res, next) {
       success: true,
       transcript,
       ...commandResult,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Check if backend Cloud TTS is configured with an API key
+ */
+export async function getTtsStatus(req, res) {
+  const configured = Boolean(process.env.TTS_API_KEY || process.env.GOOGLE_TTS_API_KEY);
+  return res.status(200).json({
+    success: true,
+    configured,
+    provider: configured ? 'google_cloud_tts' : null,
+    message: configured
+      ? 'Backend Cloud TTS is active and ready for regional speech synthesis.'
+      : 'Backend Cloud TTS is not configured (requires TTS_API_KEY in backend .env). Browser TTS remains primary.',
+  });
+}
+
+/**
+ * Synthesize speech on the server via Cloud TTS
+ */
+export async function synthesizeSpeech(req, res, next) {
+  try {
+    const { text, language = 'en', locale = 'en-IN' } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Text to synthesize is required.',
+      });
+    }
+
+    const apiKey = process.env.TTS_API_KEY || process.env.GOOGLE_TTS_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({
+        success: false,
+        configured: false,
+        code: 'TTS_KEY_REQUIRED',
+        message: 'Backend Cloud Text-to-Speech is not configured. Please configure TTS_API_KEY in backend .env or use browser speech.',
+      });
+    }
+
+    const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+    const payload = {
+      input: { text },
+      voice: {
+        languageCode: locale,
+        ssmlGender: 'NEUTRAL',
+      },
+      audioConfig: {
+        audioEncoding: 'MP3',
+      },
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      return res.status(response.status).json({
+        success: false,
+        error: errData.error?.message || 'Cloud TTS synthesis failed.',
+      });
+    }
+
+    const data = await response.json();
+    return res.status(200).json({
+      success: true,
+      audioBase64: data.audioContent,
+      language,
+      locale,
     });
   } catch (error) {
     next(error);

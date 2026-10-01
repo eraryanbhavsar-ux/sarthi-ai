@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAccessibility } from '../context/AccessibilityContext.jsx';
 import { Compass, User, Mail, Lock, Globe, AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
+import { SUPPORTED_LANGUAGES } from '../services/languageRegistry.js';
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -137,12 +138,11 @@ export default function RegisterPage() {
                   onChange={(e) => setPreferredLanguage(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-400"
                 >
-                  <option value="en">English (Default)</option>
-                  <option value="hi">हिन्दी (Hindi)</option>
-                  <option value="mr">मराठी (Marathi)</option>
-                  <option value="gu">ગુજરાતી (Gujarati)</option>
-                  <option value="ta">தமிழ் (Tamil)</option>
-                  <option value="es">Español (Spanish)</option>
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.nativeName} — {lang.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

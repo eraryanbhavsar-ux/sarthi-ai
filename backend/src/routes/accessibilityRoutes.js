@@ -7,6 +7,8 @@ import {
   describeImage,
   getSampleData,
   processVoice,
+  getTtsStatus,
+  synthesizeSpeech,
 } from '../controllers/accessibilityController.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -41,5 +43,9 @@ router.get('/sample', optionalAuth, getSampleData);
 
 // Process voice transcript
 router.post('/voice', aiLimiter, optionalAuth, validateBody(voiceQuerySchema), processVoice);
+
+// Regional Text-to-Speech endpoints
+router.get('/tts/status', getTtsStatus);
+router.post('/tts', aiLimiter, optionalAuth, synthesizeSpeech);
 
 export default router;

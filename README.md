@@ -228,10 +228,15 @@ npm test
 ### Accessibility Endpoints
 - `POST /api/accessibility/analyze` — Analyze PDF, image (PNG/JPG/WebP), or pasted text.
 - `POST /api/accessibility/question` — Contextual Q&A strictly grounded in the document.
-- `POST /api/accessibility/translate` — Multilingual translation into Marathi, Hindi, etc.
+### Accessibility Endpoints
+- `POST /api/accessibility/analyze` — Analyze PDF, image (PNG/JPG/WebP), or pasted text.
+- `POST /api/accessibility/question` — Contextual Q&A strictly grounded in the document.
+- `POST /api/accessibility/translate` — Complete document translation into 11 Indian regional languages.
 - `POST /api/accessibility/simplify` — "Make it even simpler" plain-language distillation.
 - `GET /api/accessibility/sample` — Load verified scholarship guidelines sample.
-- `POST /api/accessibility/voice` — Process voice transcripts and commands.
+- `POST /api/accessibility/voice` — Process voice transcripts and commands with regional language routing.
+- `GET /api/accessibility/tts/status` — Check backend Cloud TTS configuration status.
+- `POST /api/accessibility/tts` — Server-side text-to-speech synthesis endpoint for regional speech.
 
 ### Vision Endpoints (SARTHI Vision)
 - `POST /api/vision/analyze` — Multimodal camera and image analysis for visual accessibility.
@@ -251,22 +256,58 @@ npm test
 
 ---
 
-## 10. Marathi & Multilingual Speech Synthesis (TTS)
+## 10. Multilingual Regional Language & Speech Synthesis (TTS) Architecture
 
-SARTHI is architected with a dual-layer Text-to-Speech framework:
+SARTHI provides native accessibility across **11 Indian Regional Languages**:
+- **English** (`en`)
+- **हिन्दी — Hindi** (`hi`)
+- **मराठी — Marathi** (`mr`)
+- **ગુજરાતી — Gujarati** (`gu`)
+- **বাংলা — Bengali** (`bn`)
+- **தமிழ் — Tamil** (`ta`)
+- **తెలుగు — Telugu** (`te`)
+- **ಕನ್ನಡ — Kannada** (`kn`)
+- **മലയാളം — Malayalam** (`ml`)
+- **ਪੰਜਾਬੀ — Punjabi** (`pa`)
+- **ଓଡ଼િଆ — Odia** (`or`)
 
-1. **Client-Side Web Speech API (Zero-Cost Default):**
+### Dual-Layer Text-to-Speech Architecture (`TextToSpeechProvider`)
+
+```
+Selected Language
+       ↓
+  TTS Manager
+       ↓
+Is device voice available?
+       ↓
+YES → BrowserTTSProvider (Dynamic locale discovery + utterance chunking)
+       ↓
+NO
+       ↓
+BackendTTSProvider (`POST /api/accessibility/tts`)
+       ↓
+Audio playback / Honest device notice
+```
+
+1. **Client-Side Web Speech API (`BrowserTTSProvider`):**
    - Asynchronously detects all available device/browser voices via `speechSynthesis.getVoices()`.
-   - Matches language tags dynamically (`mr-IN`, `hi-IN`, `en-US`) without hardcoded voice names.
-   - **Truthful Fallback Notice:** If a browser or device lacks an installed Marathi voice (common on default macOS/Windows installs without Indian regional language packs), SARTHI **does not pretend speech is working** or fallback to an English voice reading Devanagari. It displays a prominent notice:
-     `"Marathi voice is not available on this device/browser."`
-     and informs the user how to install the voice pack in system settings.
-2. **Pluggable Cloud TTS Backend (Architectural Adapter):**
-   - Implemented in `frontend/src/services/ttsService.js`.
-   - If external cloud TTS is required for guaranteed Marathi playback across all legacy browsers:
-     - Provider: Google Cloud Text-to-Speech (Voice: `mr-IN-Wavenet-A` / `mr-IN-Standard-A`)
-     - Backend Environment Variable: `GOOGLE_TTS_API_KEY`
-     - Can be plugged in via `/api/accessibility/tts` without modifying any UI component.
+   - Matches language tags dynamically (`mr-IN`, `hi-IN`, `gu-IN`, `ta-IN`, `te-IN`, `bn-IN`, `kn-IN`, `ml-IN`, `pa-IN`, `or-IN`, `en-IN`) without hardcoding voice names.
+   - **Utterance Chunking:** Automatically divides lengthy documents into sentence-level chunks (`।`, `.`, `!`, `?`) to prevent browser speech synthesis cutoffs or hangs on long texts.
+   - **Playback Controls:** Full support for Pause, Resume, and Stop controls across sentences.
+   - **Truthful Voice Availability Notice:** If a browser or OS lacks an installed voice pack for a given language, SARTHI **never fakes speech** or shows a synthetic "playing" state. It truthfully informs the user:
+     `"Voice is not available on this device/browser for <Language>"` and renders the 100% complete visual translation.
+2. **Pluggable Cloud TTS Backend (`BackendTTSProvider`):**
+   - Implemented via `frontend/src/services/voice/textToSpeechProvider.js` and `POST /api/accessibility/tts`.
+   - Supports server-side regional speech synthesis (e.g. Google Cloud Text-to-Speech with `TTS_API_KEY`).
+   - Server-side credentials remain 100% confidential and are never exposed to the Vite frontend bundle.
+
+### Multilingual Voice Assistant ("Hey Sarthi")
+SARTHI's hands-free voice assistant understands multilingual commands and questions:
+- `"Hey Sarthi, explain this in Marathi"` → Switches active language to Marathi, responds in native script (`"मी ऐकत आहे..."`), and plays Marathi speech.
+- `"Hey Sarthi, translate this to Hindi"` → Switches to Hindi with Devanagari guidance.
+- `"मराठीत हे समजावून सांग"` → Direct native script recognition and execution.
+- `"Hey Sarthi, read this in Tamil"` → Activates Tamil language mode.
+
 
 ---
 

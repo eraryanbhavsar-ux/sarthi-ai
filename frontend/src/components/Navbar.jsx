@@ -19,6 +19,8 @@ import {
   Mic,
   MicOff,
 } from 'lucide-react';
+import LanguageCenterModal from './LanguageCenterModal.jsx';
+import { getLanguageInfo } from '../services/languageRegistry.js';
 
 export default function Navbar() {
   const { user, isAuthenticated, logout, demoLogin } = useAuth();
@@ -27,7 +29,9 @@ export default function Navbar() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [languageModalOpen, setLanguageModalOpen] = useState(false);
 
+  const currentLangInfo = getLanguageInfo(activeLanguage);
   const isActive = (path) => location.pathname === path;
 
   return (
@@ -102,26 +106,18 @@ export default function Navbar() {
 
           {/* Right Actions (Desktop) */}
           <div className="hidden sm:flex items-center gap-2.5">
-            {/* Quick Language Dropdown */}
-            <div className="relative">
-              <label htmlFor="nav-lang-select" className="sr-only">Choose Language</label>
-              <div className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                <Globe className="w-3.5 h-3.5 text-brand-600" aria-hidden="true" />
-                <select
-                  id="nav-lang-select"
-                  value={activeLanguage}
-                  onChange={(e) => setActiveLanguage(e.target.value)}
-                  className="bg-transparent border-none text-xs font-medium cursor-pointer focus:outline-none"
-                >
-                  <option value="en">EN</option>
-                  <option value="hi">हिन्दी</option>
-                  <option value="mr">मराठी</option>
-                  <option value="gu">ગુજરાતી</option>
-                  <option value="ta">தமிழ்</option>
-                  <option value="es">ES</option>
-                </select>
-              </div>
-            </div>
+            {/* Accessible Language Center Button */}
+            <button
+              type="button"
+              onClick={() => setLanguageModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors"
+              aria-label={`Open Language Center. Current language: ${currentLangInfo.displayName}`}
+              title="Open SARTHI Language Center (11 Indian Languages)"
+            >
+              <Globe className="w-3.5 h-3.5 text-brand-600" aria-hidden="true" />
+              <span>{currentLangInfo.nativeName}</span>
+              <span className="text-[10px] text-slate-400 font-medium">({currentLangInfo.code.toUpperCase()})</span>
+            </button>
 
             {/* Quick Hey Sarthi Wake Word Toggle */}
             <button
@@ -215,19 +211,15 @@ export default function Navbar() {
 
           {/* Mobile Right Controls: Quick Lang + Menu Button */}
           <div className="flex items-center gap-1.5 sm:hidden">
-            <div className="relative">
-              <label htmlFor="mobile-nav-lang" className="sr-only">Language</label>
-              <select
-                id="mobile-nav-lang"
-                value={activeLanguage}
-                onChange={(e) => setActiveLanguage(e.target.value)}
-                className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold px-2 py-1.5 cursor-pointer focus:outline-none"
-              >
-                <option value="en">EN</option>
-                <option value="hi">HI</option>
-                <option value="mr">MR</option>
-              </select>
-            </div>
+            <button
+              type="button"
+              onClick={() => setLanguageModalOpen(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold"
+              aria-label={`Current language: ${currentLangInfo.displayName}. Open Language Center`}
+            >
+              <Globe className="w-3.5 h-3.5 text-brand-600" />
+              <span>{currentLangInfo.code.toUpperCase()}</span>
+            </button>
 
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -333,6 +325,12 @@ export default function Navbar() {
           </div>
         </div>
       )}
+
+      {/* Multilingual Regional Language Center Modal */}
+      <LanguageCenterModal
+        isOpen={languageModalOpen}
+        onClose={() => setLanguageModalOpen(false)}
+      />
     </header>
   );
 }

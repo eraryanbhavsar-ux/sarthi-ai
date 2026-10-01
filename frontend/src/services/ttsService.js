@@ -22,58 +22,42 @@
  *   - Route: POST /api/accessibility/tts -> Streams audio/mp3 or returns base64 audio
  */
 
+import { ttsManager } from './voice/textToSpeechProvider.js';
+import { getLanguageInfo } from './languageRegistry.js';
+
 class TTSService {
   constructor() {
-    this.backendTtsUrl = import.meta.env.VITE_BACKEND_TTS_URL || null;
+    this.manager = ttsManager;
   }
 
-  /**
-   * Check if the current browser environment has an installed voice for the language.
-   */
   hasBrowserVoice(langCode, voices = []) {
-    if (!voices || voices.length === 0) return false;
-    const target = (langCode || '').toLowerCase().trim();
-    const prefix = target.split(/[-_]/)[0];
-
-    return voices.some((v) => {
-      const vLang = v.lang.toLowerCase().replace('_', '-');
-      const vName = (v.name || '').toLowerCase();
-      if (vLang === target || vLang === prefix || vLang.startsWith(`${prefix}-`)) {
-        return true;
-      }
-      if (prefix === 'mr' && (vName.includes('marathi') || vName.includes('mr-in'))) return true;
-      if (prefix === 'hi' && (vName.includes('hindi') || vName.includes('hi-in'))) return true;
-      return false;
-    });
+    return this.manager.browserTTS.hasVoice(langCode, voices);
   }
 
-  /**
-   * Play audio from an external TTS endpoint if configured
-   */
+  getVoiceStatus(langCode, voices = []) {
+    return this.manager.getVoiceStatus(langCode, voices);
+  }
+
   async playCloudTTS(text, lang = 'mr-IN') {
-    if (!this.backendTtsUrl) {
-      throw new Error('Cloud TTS endpoint is not configured.');
-    }
+    return this.manager.backendTTS.speak(text, { lang });
+  }
 
-    const response = await fetch(this.backendTtsUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, language: lang }),
-    });
+  async speak(text, options = {}) {
+    return this.manager.speak(text, options);
+  }
 
-    if (!response.ok) {
-      throw new Error(`TTS server error (${response.status})`);
-    }
+  pause() {
+    this.manager.pause();
+  }
 
-    const blob = await response.blob();
-    const audioUrl = URL.createObjectURL(blob);
-    const audio = new Audio(audioUrl);
-    return new Promise((resolve, reject) => {
-      audio.onended = () => resolve();
-      audio.onerror = (e) => reject(e);
-      audio.play();
-    });
+  resume() {
+    this.manager.resume();
+  }
+
+  stop() {
+    this.manager.stop();
   }
 }
 
 export const ttsService = new TTSService();
+export { ttsManager };

@@ -53,10 +53,17 @@ export const aiQuestionAnswerSchema = z.object({
 
 export const aiTranslationOutputSchema = z.object({
   language: z.string(),
+  title: z.string().optional(),
+  summary: z.string().optional(),
   simpleExplanation: z.string(),
-  keyPoints: z.array(z.string()),
-  requiredActions: z.array(aiActionSchema),
+  keyPoints: z.array(z.string()).default([]),
+  requiredActions: z.array(aiActionSchema).default([]),
   steps: z.array(aiStepSchema).default([]),
+  deadlines: z.array(aiDeadlineSchema).default([]),
+  requiredDocuments: z.array(aiDocumentSchema).default([]),
+  importantWarnings: z.array(z.string()).default([]),
+  missingInformation: z.array(z.string()).default([]),
+  visualDescription: z.string().optional().default(''),
 });
 
 export const aiSimplificationOutputSchema = z.object({
