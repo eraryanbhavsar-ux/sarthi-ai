@@ -7,6 +7,7 @@ import {
   getVisionSessionById,
   deleteVisionSession,
   getVisionSample,
+  translateVision,
 } from '../controllers/visionController.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -16,10 +17,17 @@ const router = express.Router();
 
 /**
  * @route   POST /api/vision/analyze
- * @desc    Analyze captured image or uploaded photo for blind/low-vision accessibility
+ * @desc    Analyze live camera frame or uploaded image for accessibility
  * @access  Public / Optional Auth
  */
 router.post('/analyze', aiLimiter, optionalAuth, upload.single('file'), analyzeVision);
+
+/**
+ * @route   POST /api/vision/translate
+ * @desc    Translate active vision result into regional language on the fly
+ * @access  Public / Optional Auth
+ */
+router.post('/translate', aiLimiter, optionalAuth, translateVision);
 
 /**
  * @route   POST /api/vision/question

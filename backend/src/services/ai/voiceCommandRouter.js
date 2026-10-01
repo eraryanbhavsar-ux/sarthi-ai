@@ -80,6 +80,34 @@ export function checkInstantCommand(cleanedTranscript = '') {
     };
   }
 
+  if (
+    lower.includes('what am i looking at') ||
+    lower.includes('what is in front of me') ||
+    lower.includes('describe what you see') ||
+    lower.includes('what do you see') ||
+    lower.includes('describe this scene')
+  ) {
+    return {
+      intent: 'DESCRIBE_VISION',
+      spokenResponse: 'Analyzing what is in front of the camera.',
+      action: { type: 'ANALYZE_CAMERA' },
+    };
+  }
+
+  if (
+    lower.includes('what does this say') ||
+    lower.includes('read this') ||
+    lower.includes('read the document') ||
+    lower.includes('read label') ||
+    lower.includes('read text')
+  ) {
+    return {
+      intent: 'READ_TEXT',
+      spokenResponse: 'Reading visible text from the camera.',
+      action: { type: 'READ_VISIBLE_TEXT' },
+    };
+  }
+
   if (lower.includes('go to vision') || lower.includes('open vision') || lower.includes('open camera') || lower.includes('start camera')) {
     return {
       intent: 'NAVIGATION',

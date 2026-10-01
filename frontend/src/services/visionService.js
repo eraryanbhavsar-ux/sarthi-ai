@@ -30,6 +30,17 @@ export const visionService = {
   },
 
   /**
+   * Translate current visual result into target regional language on the fly
+   */
+  async translateVision({ visionData, targetLanguage }) {
+    const res = await api.post('/vision/translate', {
+      visionData,
+      targetLanguage,
+    });
+    return res.data;
+  },
+
+  /**
    * Ask contextual question about analyzed scene/document
    */
   async askVisionQuestion({ sessionId, question, visionContext, language = 'en', isVoiceCommand = false }) {

@@ -88,6 +88,8 @@ export const visionAnalysisOutputSchema = z.object({
   possibleActions: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([]),
   isDocument: z.boolean().default(false),
+  documentHeading: z.string().default(''),
+  confidence: z.enum(['high', 'medium', 'low']).default('high'),
   spatialLayout: z.string().default(''),
   detectedForm: z.object({
     hasForm: z.boolean().default(false),

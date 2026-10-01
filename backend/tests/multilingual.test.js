@@ -59,3 +59,20 @@ test('detectLanguageIntent should identify Gujarati, Tamil, Telugu, and Bengali'
   assert.strictEqual(detectLanguageIntent('Explain this in Telugu')?.code, 'te');
   assert.strictEqual(detectLanguageIntent('Translate this into Bengali')?.code, 'bn');
 });
+
+test('checkInstantCommand should route vision commands accurately', async () => {
+  const { checkInstantCommand } = await import('../src/services/ai/voiceCommandRouter.js');
+
+  const cmd1 = checkInstantCommand('what am I looking at');
+  assert.strictEqual(cmd1?.intent, 'DESCRIBE_VISION');
+  assert.strictEqual(cmd1?.action?.type, 'ANALYZE_CAMERA');
+
+  const cmd2 = checkInstantCommand('what does this say');
+  assert.strictEqual(cmd2?.intent, 'READ_TEXT');
+  assert.strictEqual(cmd2?.action?.type, 'READ_VISIBLE_TEXT');
+
+  const cmd3 = checkInstantCommand('read the document');
+  assert.strictEqual(cmd3?.intent, 'READ_TEXT');
+  assert.strictEqual(cmd3?.action?.type, 'READ_VISIBLE_TEXT');
+});
+

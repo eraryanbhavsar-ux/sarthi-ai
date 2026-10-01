@@ -697,6 +697,51 @@ export const geminiService = {
       return null;
     }
   },
+
+  /**
+   * Translate current visual result into target regional language
+   */
+  async translateVisionResult({ visionData, targetLanguage }) {
+    const client = getClient();
+    if (!client) {
+      throw new Error('Gemini API key required for vision translation');
+    }
+
+    const prompt = `Translate this visual assistant result into target language code: ${targetLanguage}.
+Source visual description: "${visionData.description || ''}"
+Document heading: "${visionData.documentHeading || ''}"
+Visible text items: ${JSON.stringify(visionData.visibleText || [])}
+Important information: ${JSON.stringify(visionData.importantInformation || [])}
+Warnings: ${JSON.stringify(visionData.warnings || [])}
+
+CRITICAL RULES:
+1. Formulate all text in the native script of ${targetLanguage} (e.g. Devanagari for Marathi/Hindi, Gujarati script for Gujarati, etc.).
+2. Preserve exact dates, numbers, times, percentages, monetary amounts (₹), and official form codes.
+3. Keep the description natural, concise, and easy to understand for blind or low-vision users.
+
+Output strictly valid JSON with this exact structure:
+{
+  "description": "Translated description in native script",
+  "documentHeading": "Translated heading in native script if present, else empty string",
+  "visibleText": ["Translated line 1", "Translated line 2"],
+  "importantInformation": ["Translated detail 1"],
+  "warnings": ["Translated warning 1"]
+}`;
+
+    const response = await callGeminiResilient(client, {
+      model: MODEL_NAME,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+      },
+    });
+
+    const rawText = response.text || (response.candidates?.[0]?.content?.parts?.[0]?.text);
+    const parsed = extractJson(rawText);
+    if (parsed) return parsed;
+    throw new Error('Could not parse translated vision result');
+  },
 };
 
 function generateHeuristicVisionAnalysis(userLanguage = 'en') {

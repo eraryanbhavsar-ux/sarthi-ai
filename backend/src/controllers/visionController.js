@@ -72,6 +72,8 @@ export async function analyzeVision(req, res, next) {
       possibleActions: analysis.possibleActions,
       warnings: analysis.warnings,
       isDocument: analysis.isDocument,
+      documentHeading: analysis.documentHeading || '',
+      confidence: analysis.confidence || 'high',
       spatialLayout: analysis.spatialLayout,
       detectedForm: analysis.detectedForm,
       activeLanguage: language,
@@ -405,3 +407,29 @@ export async function getVisionSample(req, res, next) {
     next(err);
   }
 }
+
+export async function translateVision(req, res, next) {
+  try {
+    const { visionData, targetLanguage } = req.body;
+    if (!visionData || !targetLanguage) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide visionData and targetLanguage.',
+      });
+    }
+
+    const translated = await geminiService.translateVisionResult({
+      visionData,
+      targetLanguage,
+    });
+
+    res.status(200).json({
+      success: true,
+      targetLanguage,
+      translated,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+

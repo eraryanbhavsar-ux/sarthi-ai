@@ -159,6 +159,9 @@ export const VoiceAssistantProvider = ({ children }) => {
               if (providerRef.current) providerRef.current.resumeWakeListening();
               return;
             }
+
+            // Broadcast action to listening components (e.g., VisionPage)
+            window.dispatchEvent(new CustomEvent('sarthi-vision-action', { detail: data.action }));
           }
 
           // Speak the result in the target language
