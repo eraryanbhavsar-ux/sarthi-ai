@@ -133,7 +133,7 @@ export default function Navbar() {
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
               aria-label={isAssistantEnabled ? 'Disable "Hey Sarthi" voice assistant' : 'Enable "Hey Sarthi" voice assistant'}
-              title={isAssistantEnabled ? 'Hey Sarthi is active - say "Hey Sarthi" or Alt+V' : 'Turn on "Hey Sarthi" voice assistant'}
+              title={isAssistantEnabled ? 'Hey Sarthi is active - say "Hey Sarthi", press ⌘K / ⌥V, or tap the mic' : 'Turn on "Hey Sarthi" voice assistant'}
             >
               <span className="relative flex h-2 w-2">
                 {isAssistantEnabled && (

@@ -347,22 +347,33 @@ export const VoiceAssistantProvider = ({ children }) => {
     }
   };
 
-  // Global keyboard shortcut: Alt+V / Option+V to toggle Voice Assistant
+  // Global keyboard shortcuts:
+  // - Mac: ⌘K or Option+V (⌥V) or ⌘Shift+V
+  // - Windows/Linux: Alt+V or Ctrl+Shift+V
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if ((e.altKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+      const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName) || e.target?.isContentEditable;
+
+      const isMacOptionV = e.altKey && e.key.toLowerCase() === 'v';
+      const isMacCmdK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k';
+      const isShiftV = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v';
+
+      if (isMacOptionV || isMacCmdK || isShiftV) {
+        // If user is inside an input, only trigger if it's Cmd+K or Option+V
         e.preventDefault();
-        if (isEnabled) {
-          disableVoiceAssistant();
-        } else {
+        if (!isEnabled) {
           enableVoiceAssistant();
+        } else if (assistantState === 'SPEAKING' || assistantState === 'LISTENING') {
+          cancelCurrentInteraction();
+        } else {
+          triggerPushToTalk();
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isEnabled]);
+  }, [isEnabled, assistantState]);
 
   return (
     <VoiceAssistantContext.Provider

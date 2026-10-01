@@ -33,6 +33,10 @@ export default function VoiceAssistantDock() {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showTips, setShowTips] = useState(false);
 
+  const isMac = typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+  const shortcutLabel = isMac ? '⌘K / ⌥V' : 'Alt+V';
+  const shortcutTitle = isMac ? 'Mac Shortcut: ⌘K or Option(⌥)+V (or simply say "Hey Sarthi")' : 'Shortcut: Alt+V (or simply say "Hey Sarthi")';
+
   // Status configuration mapping
   const statusConfig = {
     DISABLED: {
@@ -249,6 +253,7 @@ export default function VoiceAssistantDock() {
                 type="button"
                 onClick={triggerPushToTalk}
                 disabled={!isSupported}
+                title={shortcutTitle}
                 className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs ${
                   assistantState === 'LISTENING'
                     ? 'bg-rose-500 hover:bg-rose-600 text-white animate-pulse'
@@ -282,8 +287,12 @@ export default function VoiceAssistantDock() {
                 <Shield className="w-3 h-3 text-emerald-500" />
                 Active while app is open &bull; Privacy preserved
               </span>
-              <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[9px] font-mono border border-slate-200 dark:border-slate-700">
-                Alt+V
+              <kbd
+                className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[9px] font-mono border border-slate-200 dark:border-slate-700 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                title={shortcutTitle}
+                onClick={triggerPushToTalk}
+              >
+                {shortcutLabel}
               </kbd>
             </div>
           </div>
