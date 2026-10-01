@@ -337,9 +337,17 @@ export class BrowserTTSProvider {
  * Resolve the canonical backend TTS endpoint URL dynamically from environment configuration
  */
 export function getDefaultTtsEndpoint() {
-  const base = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '/api';
-  const cleanBase = base.replace(/\/+$/, '');
-  return `${cleanBase}/accessibility/tts`;
+  const base = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '';
+  if (base && base.trim() !== '') {
+    return `${base.trim().replace(/\/+$/, '')}/accessibility/tts`;
+  }
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      return 'https://sarthi-ai-szqy.onrender.com/api/accessibility/tts';
+    }
+  }
+  return '/api/accessibility/tts';
 }
 
 /**
