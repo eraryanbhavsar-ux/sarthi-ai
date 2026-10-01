@@ -30,6 +30,10 @@ export const updateChecklistSchema = z.object({
 
 export const voiceQuerySchema = z.object({
   transcript: z.string().min(1, 'Voice transcript is required'),
-  sessionId: z.string().optional(),
+  sessionId: z.string().optional().nullable(),
+  visionSessionId: z.string().optional().nullable(),
+  activePage: z.string().optional(),
+  currentSection: z.string().optional(),
+  visionContext: z.record(z.any()).optional().nullable(),
   language: z.string().optional().default('en'),
 });

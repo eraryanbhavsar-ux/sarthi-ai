@@ -4,6 +4,7 @@ import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
 import SkipLink from './components/SkipLink.jsx';
 import AccessibilityToolbar from './components/AccessibilityToolbar.jsx';
+import VoiceAssistantDock from './components/VoiceAssistantDock.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import LandingPage from './pages/LandingPage.jsx';
 import WorkspacePage from './pages/WorkspacePage.jsx';
@@ -33,6 +34,7 @@ export default function App() {
 
       <Footer />
       <AccessibilityToolbar />
+      <VoiceAssistantDock />
     </div>
   );
 }

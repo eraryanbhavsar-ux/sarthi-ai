@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAccessibility } from '../context/AccessibilityContext.jsx';
+import { useVoiceAssistant } from '../context/VoiceAssistantContext.jsx';
 import { accessibilityService } from '../services/accessibilityService.js';
 import AccessibilitySummaryCard from '../components/AccessibilitySummaryCard.jsx';
 import ActionChecklist from '../components/ActionChecklist.jsx';
@@ -32,6 +33,7 @@ import {
 
 export default function WorkspacePage() {
   const { announce, speakText, startListening, stopListening, isListening, activeLanguage } = useAccessibility();
+  const { setVoiceContext } = useVoiceAssistant();
   const location = useLocation();
 
   // Active state
@@ -49,6 +51,26 @@ export default function WorkspacePage() {
   const [analysis, setAnalysis] = useState(null);
 
   const fileInputRef = useRef(null);
+
+  // Keep Voice Assistant synchronized with the active document session
+  useEffect(() => {
+    if (session) {
+      setVoiceContext((prev) => ({
+        ...prev,
+        activePage: 'workspace',
+        sessionId: session._id || session.id,
+        session,
+        currentSection: activeTab,
+      }));
+    } else {
+      setVoiceContext((prev) => ({
+        ...prev,
+        activePage: 'workspace',
+        sessionId: null,
+        session: null,
+      }));
+    }
+  }, [session, activeTab, setVoiceContext]);
 
   // Check if routed with an existing session ID (from Dashboard)
   useEffect(() => {

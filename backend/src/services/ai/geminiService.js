@@ -667,6 +667,36 @@ export const geminiService = {
       nextAction: currentFieldIndex < fields.length - 1 ? 'Say or click Next Field to proceed.' : 'You have reached the final field of this form.'
     };
   },
+
+  /**
+   * Generic structured JSON generation with resilient fallback models
+   */
+  async generateRawJson({ systemPrompt = SYSTEM_ACCESSIBILITY_PROMPT, userPrompt, temperature = 0.2 }) {
+    const client = getClient();
+    if (!client) return null;
+
+    try {
+      const response = await callGeminiResilient(client, {
+        model: MODEL_NAME,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+          },
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          temperature,
+        },
+      });
+
+      const rawText = response.text || (response.candidates?.[0]?.content?.parts?.[0]?.text);
+      return extractJson(rawText);
+    } catch (err) {
+      console.warn('[SARTHI AI] generateRawJson notice:', err.message);
+      return null;
+    }
+  },
 };
 
 function generateHeuristicVisionAnalysis(userLanguage = 'en') {

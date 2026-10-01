@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAccessibility } from '../context/AccessibilityContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useVoiceAssistant } from '../context/VoiceAssistantContext.jsx';
 import { visionService } from '../services/visionService.js';
 import {
   Camera,
@@ -35,6 +36,7 @@ import {
 
 export default function VisionPage() {
   const { user } = useAuth();
+  const { setVoiceContext } = useVoiceAssistant();
   const {
     activeLanguage,
     setActiveLanguage,
@@ -86,6 +88,35 @@ export default function VisionPage() {
   const fileInputRef = useRef(null);
   const streamRef = useRef(null);
   const liveRegionRef = useRef(null);
+
+  // Keep Voice Assistant synchronized with active Vision context
+  useEffect(() => {
+    setVoiceContext((prev) => ({
+      ...prev,
+      activePage: 'vision',
+      visionSessionId: currentSession?._id || null,
+      visionContext: analysis
+        ? {
+            description: analysis.description,
+            extractedText: analysis.extractedText,
+            documentType: analysis.documentType,
+            keyPoints: analysis.keyPoints,
+            actions: analysis.actions,
+            deadlines: analysis.deadlines,
+          }
+        : null,
+      currentSection: activeTab,
+    }));
+
+    return () => {
+      setVoiceContext((prev) => ({
+        ...prev,
+        activePage: null,
+        visionSessionId: null,
+        visionContext: null,
+      }));
+    };
+  }, [currentSession, analysis, activeTab, setVoiceContext]);
 
   // Initialize camera stream
   const startCamera = async () => {

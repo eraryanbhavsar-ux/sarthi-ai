@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAccessibility } from '../context/AccessibilityContext.jsx';
+import { useVoiceAssistant } from '../context/VoiceAssistantContext.jsx';
 import {
   Sparkles,
   SlidersHorizontal,
@@ -15,11 +16,14 @@ import {
   X,
   Compass,
   Eye,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 
 export default function Navbar() {
   const { user, isAuthenticated, logout, demoLogin } = useAuth();
   const { activeLanguage, setActiveLanguage } = useAccessibility();
+  const { isAssistantEnabled, toggleVoiceAssistant } = useVoiceAssistant();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
@@ -118,6 +122,28 @@ export default function Navbar() {
                 </select>
               </div>
             </div>
+
+            {/* Quick Hey Sarthi Wake Word Toggle */}
+            <button
+              type="button"
+              onClick={toggleVoiceAssistant}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                isAssistantEnabled
+                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/20'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+              aria-label={isAssistantEnabled ? 'Disable "Hey Sarthi" voice assistant' : 'Enable "Hey Sarthi" voice assistant'}
+              title={isAssistantEnabled ? 'Hey Sarthi is active - say "Hey Sarthi" or Alt+V' : 'Turn on "Hey Sarthi" voice assistant'}
+            >
+              <span className="relative flex h-2 w-2">
+                {isAssistantEnabled && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${isAssistantEnabled ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+              </span>
+              <Mic className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Hey Sarthi: {isAssistantEnabled ? 'ON' : 'OFF'}</span>
+            </button>
 
             {/* Auth States */}
             {isAuthenticated ? (
@@ -244,6 +270,28 @@ export default function Navbar() {
           >
             Dashboard
           </Link>
+          <button
+            type="button"
+            onClick={() => {
+              toggleVoiceAssistant();
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full flex items-center justify-between py-2.5 px-3 rounded-lg text-sm font-bold border transition-colors ${
+              isAssistantEnabled
+                ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Mic className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              Hey Sarthi Voice Assistant
+            </span>
+            <span className={`text-xs px-2 py-0.5 rounded font-black uppercase ${
+              isAssistantEnabled ? 'bg-emerald-500 text-white' : 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+            }`}>
+              {isAssistantEnabled ? 'Active' : 'Off'}
+            </span>
+          </button>
           <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-2">
             {!isAuthenticated ? (
               <>

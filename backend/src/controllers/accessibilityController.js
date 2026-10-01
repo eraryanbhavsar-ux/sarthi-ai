@@ -1,6 +1,8 @@
 import { geminiService } from '../services/ai/geminiService.js';
 import { sessionRepo } from '../models/sessionRepo.js';
+import { visionSessionRepo } from '../models/visionSessionRepo.js';
 import { userRepo } from '../models/userRepo.js';
+import { routeVoiceCommand } from '../services/ai/voiceCommandRouter.js';
 import { extractTextFromPdf } from '../utils/pdfExtractor.js';
 import {
   SAMPLE_DOCUMENT_TITLE,
@@ -299,57 +301,62 @@ export async function getSampleData(req, res, next) {
 
 export async function processVoice(req, res, next) {
   try {
-    const { transcript, sessionId, language = 'en' } = req.body;
+    const {
+      transcript,
+      sessionId,
+      visionSessionId,
+      activePage = 'workspace',
+      language = 'en',
+      visionContext = null,
+    } = req.body;
     const userId = req.user ? (req.user._id || req.user.id) : null;
 
-    if (!transcript) {
+    if (!transcript || !transcript.trim()) {
       return res.status(400).json({
         success: false,
         error: 'No voice transcript received.',
       });
     }
 
+    let session = null;
     if (sessionId) {
-      // Question regarding active session
-      const session = await sessionRepo.findById(sessionId);
-      if (session) {
-        const qnaResponse = await geminiService.answerQuestion({
-          documentContent: session.originalText || session.simpleExplanation,
-          question: transcript,
-          previousQnA: session.qnaHistory || [],
-          userLanguage: language,
-        });
-
-        const newQnA = {
-          question: transcript,
-          answer: qnaResponse.answer,
-          timestamp: new Date(),
-        };
-
-        const updatedQnA = [...(session.qnaHistory || []), newQnA];
-        await sessionRepo.update(sessionId, { qnaHistory: updatedQnA });
-
-        if (userId) {
-          await userRepo.incrementStat(userId, 'questionsAnswered', 1);
-        }
-
-        return res.status(200).json({
-          success: true,
-          mode: 'question',
-          transcript,
-          answer: qnaResponse.answer,
-          sourceFound: qnaResponse.sourceFound,
-          suggestedFollowUp: qnaResponse.suggestedFollowUp,
-        });
-      }
+      session = await sessionRepo.findById(sessionId);
     }
 
-    // Voice general query / command
-    res.status(200).json({
-      success: true,
-      mode: 'command',
+    let visionSession = null;
+    if (visionSessionId) {
+      visionSession = await visionSessionRepo.findById(visionSessionId);
+    }
+    if (!visionSession && visionContext) {
+      visionSession = visionContext;
+    }
+
+    const commandResult = await routeVoiceCommand({
       transcript,
-      answer: `I heard: "${transcript}". You can ask questions about your uploaded documents or upload a new file for analysis.`,
+      activePage,
+      session,
+      visionSession,
+      language,
+    });
+
+    if (session && commandResult.intent === 'QUESTION') {
+      const newQnA = {
+        question: transcript,
+        answer: commandResult.spokenResponse,
+        timestamp: new Date(),
+      };
+      const updatedQnA = [...(session.qnaHistory || []), newQnA];
+      await sessionRepo.update(sessionId, { qnaHistory: updatedQnA });
+    }
+
+    if (userId) {
+      await userRepo.incrementStat(userId, 'questionsAnswered', 1);
+    }
+
+    return res.status(200).json({
+      success: true,
+      transcript,
+      ...commandResult,
     });
   } catch (error) {
     next(error);
