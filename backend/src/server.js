@@ -56,6 +56,23 @@ app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 // Global Rate Limiting
 app.use('/api', globalLimiter);
 
+// Root Welcome Route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    product: 'SARTHI',
+    tagline: 'Understand. Hear. Translate. Act.',
+    status: 'healthy',
+    message: 'SARTHI Accessibility & Inclusion AI API is Live!',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      accessibility: '/api/accessibility',
+      vision: '/api/vision',
+      sessions: '/api/sessions',
+    },
+  });
+});
+
 // Health Check
 app.get('/api/health', (req, res) => {
   const dbStatus = getDBStatus();
