@@ -334,14 +334,23 @@ export class BrowserTTSProvider {
 }
 
 /**
+ * Resolve the canonical backend TTS endpoint URL dynamically from environment configuration
+ */
+export function getDefaultTtsEndpoint() {
+  const base = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '/api';
+  const cleanBase = base.replace(/\/+$/, '');
+  return `${cleanBase}/accessibility/tts`;
+}
+
+/**
  * 2. Backend Cloud TTS Provider
  * - Server-side regional streaming (Hindi, Marathi, Gujarati, etc.)
  * - AbortController on fetch to ensure canceled requests NEVER start playing audio
  * - Full HTMLAudioElement event lifecycle management
  */
 export class BackendTTSProvider {
-  constructor(endpointUrl = '/api/accessibility/tts') {
-    this.endpointUrl = endpointUrl;
+  constructor(endpointUrl = null) {
+    this.endpointUrl = endpointUrl || getDefaultTtsEndpoint();
     this.currentAudio = null;
     this.isPaused = false;
     this.abortController = null;
