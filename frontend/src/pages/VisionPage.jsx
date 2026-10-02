@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useVoiceAssistant } from '../context/VoiceAssistantContext.jsx';
 import api from '../services/api.js';
 import { visionService } from '../services/visionService.js';
+import backendHealth from '../services/backendHealth.js';
 import { SUPPORTED_LANGUAGES, getLanguageInfo } from '../services/languageRegistry.js';
 import {
   detectSceneChange,
@@ -177,8 +178,8 @@ export default function VisionPage() {
   useEffect(() => {
     isMountedRef.current = true;
     let isCancelled = false;
-    // Fire-and-forget one-time health check to wake up sleeping Render backend if needed
-    api.get('/health').catch(() => {});
+    // Non-blocking background warmup to initiate Render container spin-up if sleeping
+    backendHealth.warmup();
 
     return () => {
       isMountedRef.current = false;
@@ -507,14 +508,15 @@ export default function VisionPage() {
   }, []);
 
   /**
-   * Frame Extraction & AI Analysis Pipeline (Phases 1-6, 14, 16-18):
+   * Frame Extraction & AI Analysis Pipeline (Phases 1-6, 14, 16-18, Cold-Start Handler):
    * 1. Validates video frame readiness (video.readyState >= 2 & videoWidth/videoHeight > 0)
-   * 2. Captures frame on canvas (verifies canvas width > 0, height > 0, non-empty base64)
-   * 3. Logs sequential diagnostic telemetry ([Vision VISION-001], frame size, times)
-   * 4. Enforces single in-flight request lock (isAnalyzingRef)
-   * 5. Uses 35s controlled timeout to prevent premature drops during Render wakeups
-   * 6. Error transparency: displays precise failure reason instead of masking
-   * 7. Displays result immediately; TTS executes asynchronously without blocking
+   * 2. Checks backend readiness via backendHealth: surfaces waking state if Render container is booting
+   * 3. Captures FRESH frame on canvas once server is ready (prevents stale frames)
+   * 4. Logs sequential diagnostic telemetry ([Vision VISION-001], frame size, times)
+   * 5. Enforces single in-flight request lock (isAnalyzingRef)
+   * 6. Uses controlled timeout (40s on warm backend, 90s on cold start)
+   * 7. Error transparency: displays precise failure reason instead of masking
+   * 8. Displays result immediately; TTS executes asynchronously without blocking
    */
   const analyzeCurrentFrame = useCallback(
     async (force = false, isRetry = false) => {
@@ -523,12 +525,12 @@ export default function VisionPage() {
         return;
       }
 
-      // Request lock: never allow simultaneous requests (Phase 14)
+      // Request lock: never allow simultaneous requests (Phase 14 & Cold-Start protection)
       if (isAnalyzingRef.current) {
         return;
       }
 
-      // Phase 4: Strict video frame readiness validation
+      // Strict video frame readiness validation
       if (
         typeof videoEl.readyState !== 'number' ||
         videoEl.readyState < 2 || // HTMLMediaElement.HAVE_CURRENT_DATA
@@ -551,102 +553,129 @@ export default function VisionPage() {
         }
       }
 
-      // Phase 2: Sequential request ID formatting (e.g. VISION-001)
+      // Sequential request ID formatting (e.g. VISION-001)
       const nextId = activeRequestIdRef.current + 1;
       const reqIdStr = 'VISION-' + String(nextId).padStart(3, '0');
 
       console.log(`[Vision ${reqIdStr}]\ncamera ready`);
-
-      // Phase 4: Capture & compress frame using canvas
-      setVisionState(VISION_STATES.CAPTURING);
-      const tCapture0 = performance.now();
-      const frameData = captureRepresentativeFrame(videoEl, 1024, 0.75);
-      const captureMs = performance.now() - tCapture0;
-
-      // Phase 4: Verify image payload before sending
-      if (!frameData || !frameData.base64 || frameData.base64.length < 200 || !frameData.sizeBytes) {
-        console.error(`[Vision ${reqIdStr}]\nFAILED\n\nreason:\nInvalid image payload (canvas frame empty)\n\nbackend error:\nNone (client rejected)`);
-        setAnalysisError('Vision unavailable\nReason: Invalid image payload');
-        setVisionState(VISION_STATES.ERROR);
-        return;
-      }
-
-      const kbSize = Math.round(frameData.sizeBytes / 1024);
-      console.log(`[Vision ${reqIdStr}]\nframe:\n${frameData.width}x${frameData.height}\nsize:\n${kbSize} KB`);
 
       // Acquire lock & advance sequence
       isAnalyzingRef.current = true;
       const requestId = ++activeRequestIdRef.current;
       setVisionState(VISION_STATES.ANALYZING);
       setAnalysisError('');
-      setIsServerWaking(false);
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
-      console.log(`[Vision ${reqIdStr}]\nrequest started`);
-
-      // 35-second client timeout (safe for cloud cold start + Gemini inference)
-      const timeoutId = setTimeout(() => {
-        abortController.abort();
-      }, 35000);
-
-      // Render cold start indicator after 5.5s
-      const wakeTimer = setTimeout(() => {
-        if (isMountedRef.current && isAnalyzingRef.current) {
-          setIsServerWaking(true);
-        }
-      }, 5500);
-
-      const requestStart = performance.now();
-
       try {
-        const res = await visionService.analyzeVision({
-          imageBase64: frameData.base64,
-          language: activeLanguage,
-          guestId: user ? null : `guest_${Date.now()}`,
-          capturedViaCamera: true,
-          fileName: 'sarthi_vision_frame.jpg',
-          signal: abortController.signal,
-          requestId: reqIdStr,
-        });
+        // Step 1: Safe Backend Warmup Verification (handles Render free-tier cold starts)
+        if (!backendHealth.isWarm()) {
+          console.log(`[Vision ${reqIdStr}] Checking backend readiness...`);
+          try {
+            await backendHealth.ensureReady({
+              onWakingStateChange: (waking) => {
+                if (isMountedRef.current && requestId === activeRequestIdRef.current) {
+                  setIsServerWaking(waking);
+                  if (waking) {
+                    announceRef.current('Waking up SARTHI Vision. The first analysis may take a little longer.');
+                  }
+                }
+              },
+              timeoutMs: 90000,
+              signal: abortController.signal,
+              maxRetries: 1,
+            });
+          } catch (healthErr) {
+            if (!isMountedRef.current || requestId !== activeRequestIdRef.current) return;
+            console.error(`[Vision ${reqIdStr}] Backend readiness check failed:`, healthErr.message);
+            setIsServerWaking(false);
+            setAnalysisError('Vision unavailable\nReason: Server is taking longer than expected to wake up. Please tap Try Again.');
+            setVisionState(VISION_STATES.ERROR);
+            announceRef.current('Server is taking longer to wake up. Please tap Try Again.');
+            return;
+          }
+        }
 
-        clearTimeout(timeoutId);
-        clearTimeout(wakeTimer);
-
-        // Stale response / unmount discard check (Phase 18)
         if (!isMountedRef.current || requestId !== activeRequestIdRef.current) {
-          console.log(`[Vision ${reqIdStr}] Discarding stale response`);
           return;
         }
 
-        const totalSec = ((performance.now() - requestStart) / 1000).toFixed(1);
-        console.log(`[Vision ${reqIdStr}]\ntotal:\n${totalSec}s`);
+        setIsServerWaking(false);
 
-        if (res.error === 'VISION_TIMEOUT') {
-          throw new Error('Gemini request timed out on backend');
+        // Step 2: Capture FRESH frame right now from active camera
+        setVisionState(VISION_STATES.CAPTURING);
+        const tCapture0 = performance.now();
+        const frameData = captureRepresentativeFrame(videoEl, 1024, 0.75);
+        const captureMs = performance.now() - tCapture0;
+
+        // Verify image payload before sending
+        if (!frameData || !frameData.base64 || frameData.base64.length < 200 || !frameData.sizeBytes) {
+          console.error(`[Vision ${reqIdStr}]\nFAILED\n\nreason:\nInvalid image payload (canvas frame empty)\n\nbackend error:\nNone (client rejected)`);
+          setAnalysisError('Vision unavailable\nReason: Invalid image payload');
+          setVisionState(VISION_STATES.ERROR);
+          return;
         }
 
-        if (res.success && res.analysis?.description) {
-          setAnalysis(res.analysis);
-          setCurrentSession(res.session || null);
-          setVisionState(VISION_STATES.RESULT);
-          setAnalysisError('');
+        const kbSize = Math.round(frameData.sizeBytes / 1024);
+        console.log(`[Vision ${reqIdStr}]\nframe:\n${frameData.width}x${frameData.height}\nsize:\n${kbSize} KB`);
 
-          const newDesc = res.analysis.description.trim();
-          announceRef.current(`SARTHI Vision: ${newDesc}`);
+        setVisionState(VISION_STATES.ANALYZING);
+        console.log(`[Vision ${reqIdStr}]\nrequest started`);
 
-          // Phase 17: Non-blocking TTS (never blocks description display)
-          if (newDesc && autoSpeak) {
-            triggerNonBlockingTTS(newDesc, activeLanguage);
+        // Normal 40s timeout for Gemini inference on a verified warm backend
+        const analysisTimeoutId = setTimeout(() => {
+          abortController.abort();
+        }, 40000);
+
+        const requestStart = performance.now();
+
+        try {
+          const res = await visionService.analyzeVision({
+            imageBase64: frameData.base64,
+            language: activeLanguage,
+            guestId: user ? null : `guest_${Date.now()}`,
+            capturedViaCamera: true,
+            fileName: 'sarthi_vision_frame.jpg',
+            signal: abortController.signal,
+            requestId: reqIdStr,
+          });
+
+          clearTimeout(analysisTimeoutId);
+
+          if (!isMountedRef.current || requestId !== activeRequestIdRef.current) {
+            console.log(`[Vision ${reqIdStr}] Discarding stale response`);
+            return;
           }
-        } else {
-          throw new Error(res.reason || res.error || res.message || 'Vision analysis failed');
+
+          const totalSec = ((performance.now() - requestStart) / 1000).toFixed(1);
+          console.log(`[Vision ${reqIdStr}]\ntotal:\n${totalSec}s`);
+
+          if (res.error === 'VISION_TIMEOUT') {
+            throw new Error('Gemini request timed out on backend');
+          }
+
+          if (res.success && res.analysis?.description) {
+            backendHealth.markWarm();
+            setAnalysis(res.analysis);
+            setCurrentSession(res.session || null);
+            setVisionState(VISION_STATES.RESULT);
+            setAnalysisError('');
+
+            const newDesc = res.analysis.description.trim();
+            announceRef.current(`SARTHI Vision: ${newDesc}`);
+
+            // Non-blocking TTS (never blocks description display)
+            if (newDesc && autoSpeak) {
+              triggerNonBlockingTTS(newDesc, activeLanguage);
+            }
+          } else {
+            throw new Error(res.reason || res.error || res.message || 'Vision analysis failed');
+          }
+        } finally {
+          clearTimeout(analysisTimeoutId);
         }
       } catch (err) {
-        clearTimeout(timeoutId);
-        clearTimeout(wakeTimer);
-
         if (!isMountedRef.current || requestId !== activeRequestIdRef.current) {
           return;
         }
@@ -655,13 +684,13 @@ export default function VisionPage() {
         let reason = '';
 
         if (isAbort) {
-          reason = 'Gemini request timed out';
+          reason = isServerWaking ? 'Server wake-up timed out' : 'Gemini request timed out';
         } else if (err.message?.includes('429') || err.message?.toLowerCase().includes('too many requests')) {
           reason = 'Server rate limit reached (HTTP 429)';
         } else if (err.message?.includes('500') || err.message?.toLowerCase().includes('server error')) {
           reason = `Backend returned HTTP 500 (${err.message})`;
         } else if (err.message?.toLowerCase().includes('network') || err.message?.toLowerCase().includes('failed to fetch')) {
-          reason = 'Network request failed';
+          reason = 'Network request failed. Backend may be offline.';
         } else {
           reason = err.message || 'Analysis failed';
         }
@@ -672,8 +701,6 @@ export default function VisionPage() {
         setVisionState(VISION_STATES.ERROR);
         announceRef.current('Vision analysis temporarily unavailable. Please try again.');
       } finally {
-        clearTimeout(timeoutId);
-        clearTimeout(wakeTimer);
         setIsServerWaking(false);
         if (requestId === activeRequestIdRef.current) {
           isAnalyzingRef.current = false;
@@ -681,7 +708,7 @@ export default function VisionPage() {
         }
       }
     },
-    [cameraStatus, isAnalysisPaused, analysis, activeLanguage, user, autoSpeak, autoScanEnabled, triggerNonBlockingTTS, analysisError]
+    [cameraStatus, isAnalysisPaused, analysis, activeLanguage, user, autoSpeak, autoScanEnabled, triggerNonBlockingTTS, analysisError, isServerWaking]
   );
 
   /**
@@ -964,10 +991,11 @@ export default function VisionPage() {
     if (visionState === VISION_STATES.CAPTURING) {
       return 'Capturing frame...';
     }
+    if (isServerWaking) {
+      return 'Waking up SARTHI Vision... The first analysis may take a little longer.';
+    }
     if (visionState === VISION_STATES.ANALYZING) {
-      return isServerWaking
-        ? 'Waking up SARTHI Vision server, please hold steady...'
-        : 'Analyzing...';
+      return 'Analyzing scene...';
     }
     if (visionState === VISION_STATES.ERROR && analysisError) {
       return analysisError.replace('\n', ' — ');
@@ -1424,6 +1452,26 @@ export default function VisionPage() {
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>More Tools</span>
                 </button>
+              </div>
+            </div>
+          ) : isServerWaking ? (
+            /* Dedicated Cold-Start Waking Banner (Reassures user, preserves camera feed) */
+            <div className="bg-slate-950/95 backdrop-blur-xl border-2 border-amber-500/50 rounded-3xl p-5 sm:p-6 shadow-2xl space-y-2.5 animate-in fade-in">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 shrink-0">
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                </div>
+                <div className="space-y-1 flex-1 min-w-0">
+                  <h3 className="text-sm sm:text-base font-black text-amber-100">
+                    Waking up SARTHI Vision...
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-300">
+                    The first analysis may take a little longer while the server warms up.
+                  </p>
+                  <p className="text-[11px] text-amber-400/90 font-medium">
+                    Camera preview remains active. A fresh frame will be captured automatically once ready.
+                  </p>
+                </div>
               </div>
             </div>
           ) : !analysisError ? (

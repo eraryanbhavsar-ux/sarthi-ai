@@ -16,7 +16,7 @@ export const getBaseApiUrl = () => {
 
 const api = axios.create({
   baseURL: getBaseApiUrl(),
-  timeout: 45000,
+  timeout: 95000,
 });
 
 api.interceptors.request.use((config) => {
@@ -32,8 +32,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message = error.response?.data?.error || error.message || 'Network error occurred.';
-    return Promise.reject(new Error(message));
+    const message = error.response?.data?.error || error.response?.data?.message || error.message || 'Network error occurred.';
+    const err = new Error(message);
+    if (error.code) err.code = error.code;
+    if (error.response) err.response = error.response;
+    return Promise.reject(err);
   }
 );
 

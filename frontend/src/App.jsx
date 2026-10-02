@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar.jsx';
 import Footer from './components/Footer.jsx';
@@ -12,8 +12,14 @@ import DashboardPage from './pages/DashboardPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import RegisterPage from './pages/RegisterPage.jsx';
 import VisionPage from './pages/VisionPage.jsx';
+import backendHealth from './services/backendHealth.js';
 
 export default function App() {
+  useEffect(() => {
+    // Non-blocking background warmup for Render free-tier cold starts
+    backendHealth.warmup();
+  }, []);
+
   return (
     <div className="flex flex-col min-h-screen">
       <ScrollToTop />
