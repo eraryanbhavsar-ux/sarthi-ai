@@ -63,7 +63,9 @@ export const VoiceAssistantProvider = ({ children }) => {
     voiceMode,
   } = useAccessibility();
 
-  // Assistant states: 'DISABLED' | 'IDLE' | 'WAKE_WORD_DETECTED' | 'LISTENING' | 'PROCESSING' | 'SPEAKING'
+  // Assistant states:
+  // 'DISABLED' | 'REQUESTING_PERMISSION' | 'READY' | 'LISTENING_FOR_WAKE_WORD' |
+  // 'WAKE_DETECTED' | 'LISTENING_FOR_COMMAND' | 'PROCESSING' | 'SPEAKING' | 'ERROR'
   const [assistantState, setAssistantState] = useState('DISABLED');
   const [isEnabled, setIsEnabled] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -75,10 +77,12 @@ export const VoiceAssistantProvider = ({ children }) => {
     session: null,
     visionSessionId: null,
     visionSession: null,
+    visionContext: null,
     currentSection: null,
   });
 
   const providerRef = useRef(null);
+  const pendingCommandListenRef = useRef(false);
   const activeLangRef = useRef(activeLanguage);
   activeLangRef.current = activeLanguage;
 
@@ -99,14 +103,35 @@ export const VoiceAssistantProvider = ({ children }) => {
     }));
   }, [location.pathname]);
 
-  // Synchronize with external TTS speaking state
+  // Synchronize with external TTS speaking state & prevent speech recognition conflict
   useEffect(() => {
-    if (isSpeaking && assistantState !== 'SPEAKING') {
-      setAssistantState('SPEAKING');
-    } else if (!isSpeaking && assistantState === 'SPEAKING' && isEnabled) {
-      setAssistantState('IDLE');
+    if (isSpeaking) {
+      if (assistantState !== 'SPEAKING') {
+        setAssistantState('SPEAKING');
+      }
       if (providerRef.current) {
-        providerRef.current.resumeWakeListening();
+        providerRef.current.setSpeaking(true);
+      }
+    } else if (!isSpeaking && assistantState === 'SPEAKING' && isEnabled) {
+      // Speech playback just finished
+      if (providerRef.current) {
+        providerRef.current.setSpeaking(false);
+      }
+
+      if (pendingCommandListenRef.current) {
+        // Just finished saying "Yes? How can I help?" -> Start listening for command!
+        pendingCommandListenRef.current = false;
+        setAssistantState('LISTENING_FOR_COMMAND');
+        if (providerRef.current) {
+          providerRef.current.startCommandListening();
+        }
+      } else {
+        // Finished speaking answer to a command -> Return to wake-word listening!
+        setAssistantState('LISTENING_FOR_WAKE_WORD');
+        if (providerRef.current) {
+          providerRef.current.setProcessing(false);
+          providerRef.current.resumeWakeListening();
+        }
       }
     }
   }, [isSpeaking, assistantState, isEnabled]);
@@ -118,22 +143,28 @@ export const VoiceAssistantProvider = ({ children }) => {
     async (commandText) => {
       if (!commandText || !commandText.trim()) {
         if (isEnabled && providerRef.current) {
-          setAssistantState('IDLE');
+          setAssistantState('LISTENING_FOR_WAKE_WORD');
           providerRef.current.resumeWakeListening();
         }
         return;
       }
 
-      setTranscript(commandText);
+      const cleanCmd = commandText.trim();
+      setTranscript(cleanCmd);
       setAssistantState('PROCESSING');
-      announce(`Processing: "${commandText}"`);
+      if (providerRef.current) {
+        providerRef.current.setProcessing(true);
+      }
+      announce(`Processing: "${cleanCmd}"`);
 
       try {
         const payload = {
-          transcript: commandText,
+          transcript: cleanCmd,
           sessionId: voiceContextRef.current.sessionId,
           visionSessionId: voiceContextRef.current.visionSessionId,
           activePage: voiceContextRef.current.activePage,
+          currentSection: voiceContextRef.current.currentSection,
+          visionContext: voiceContextRef.current.visionContext,
           language: activeLangRef.current || 'en',
         };
 
@@ -144,6 +175,9 @@ export const VoiceAssistantProvider = ({ children }) => {
           playEarcon('success');
           setLastResponse(data.spokenResponse);
           setAssistantState('SPEAKING');
+          if (providerRef.current) {
+            providerRef.current.setSpeaking(true);
+          }
 
           // Handle client-side action if returned by router
           if (data.action) {
@@ -155,8 +189,12 @@ export const VoiceAssistantProvider = ({ children }) => {
               }
             } else if (data.action.type === 'STOP_AUDIO') {
               if (stopSpeaking) stopSpeaking();
-              setAssistantState('IDLE');
-              if (providerRef.current) providerRef.current.resumeWakeListening();
+              setAssistantState('LISTENING_FOR_WAKE_WORD');
+              if (providerRef.current) {
+                providerRef.current.setSpeaking(false);
+                providerRef.current.setProcessing(false);
+                providerRef.current.resumeWakeListening();
+              }
               return;
             }
 
@@ -173,6 +211,9 @@ export const VoiceAssistantProvider = ({ children }) => {
           const fallbackMsg = "I'm not sure how to help with that yet. Try asking: 'What is the deadline?' or 'Explain this document.'";
           setLastResponse(fallbackMsg);
           setAssistantState('SPEAKING');
+          if (providerRef.current) {
+            providerRef.current.setSpeaking(true);
+          }
           if (speakText) speakText(fallbackMsg, activeLangRef.current);
         }
       } catch (err) {
@@ -181,6 +222,9 @@ export const VoiceAssistantProvider = ({ children }) => {
         setErrorNotice(errorMsg);
         setLastResponse(errorMsg);
         setAssistantState('SPEAKING');
+        if (providerRef.current) {
+          providerRef.current.setSpeaking(true);
+        }
         if (speakText) speakText(errorMsg, activeLangRef.current);
       }
     },
@@ -198,18 +242,47 @@ export const VoiceAssistantProvider = ({ children }) => {
       }
 
       playEarcon('wake');
-      setAssistantState('WAKE_WORD_DETECTED');
+      setAssistantState('WAKE_DETECTED');
 
-      if (hasImmediateCommand && immediateCommand) {
-        // User already gave command: "Hey Sarthi, what is the deadline?"
-        processCommand(immediateCommand);
+      if (hasImmediateCommand && immediateCommand && immediateCommand.trim().length > 1) {
+        // User said: "Hey Sarthi, what is the deadline?" in one breath!
+        processCommand(immediateCommand.trim());
       } else {
         // User just said: "Hey Sarthi"
-        setAssistantState('LISTENING');
-        announce("Hey Sarthi detected. I'm listening.");
+        // Respond with "Yes? How can I help?" in the active language
+        const greetingMap = {
+          hi: 'हाँ? मैं सुन रहा हूँ। मैं क्या मदद करूँ?',
+          mr: 'हो? मी ऐकत आहे. काय मदत करू?',
+          gu: 'હા? હું સાંભળી રહ્યો છું. હું શું મદદ કરી શકું?',
+          bn: 'হ্যাঁ? আমি শুনছি। কীভাবে সাহায্য করব?',
+          ta: 'ஆம்? நான் கேட்கிறேன். என்ன உதவி வேண்டும்?',
+          te: 'అవును? నేను వింటున్నాను. ఏమి సహాయం కావాలి?',
+          kn: 'ಹೌದು? ನಾನು ಕೇಳುತ್ತಿದ್ದೇನೆ. ಏನು ಸಹಾಯ ಮಾಡಲಿ?',
+          ml: 'അതെ? ഞാൻ കേൾക്കുന്നു. എന്ത് സഹായം വേണം?',
+          pa: 'ਹਾਂ? ਮੈਂ ਸੁਣ ਰਿਹਾ ਹਾਂ। ਕੀ ਮਦਦ ਕਰਾਂ?',
+          or: 'ହଁ? ମୁଁ ଶୁଣୁଛି। କଣ ସାହାଯ୍ୟ କରିବି?',
+          en: 'Yes? How can I help?',
+        };
+        const lang = activeLangRef.current || 'en';
+        const greeting = greetingMap[lang] || greetingMap.en;
+
+        setLastResponse(greeting);
+        setAssistantState('SPEAKING');
+
+        // Stop microphone recognition while greeting is speaking so it doesn't hear itself
+        if (providerRef.current) {
+          providerRef.current.setSpeaking(true);
+        }
+
+        // Set pending flag so on TTS end, we enter LISTENING_FOR_COMMAND
+        pendingCommandListenRef.current = true;
+
+        if (speakText) {
+          speakText(greeting, lang);
+        }
       }
     },
-    [announce, processCommand, stopSpeaking]
+    [processCommand, speakText, stopSpeaking]
   );
 
   /**
@@ -250,13 +323,13 @@ export const VoiceAssistantProvider = ({ children }) => {
 
     const unbindTimeout = provider.on('commandTimeout', ({ message }) => {
       announce(message);
-      setAssistantState('IDLE');
+      setAssistantState('LISTENING_FOR_WAKE_WORD');
     });
 
     const unbindError = provider.on('error', ({ message }) => {
       setErrorNotice(message);
       announce(message);
-      setAssistantState('DISABLED');
+      setAssistantState('ERROR');
       setIsEnabled(false);
     });
 
@@ -271,21 +344,69 @@ export const VoiceAssistantProvider = ({ children }) => {
   }, [activeLanguage, announce, handleWakeDetected, processCommand]);
 
   /**
-   * Enable Voice Assistant
+   * Enable Voice Assistant with robust mic permission handling
    */
-  const enableVoiceAssistant = async () => {
+  const enableVoiceAssistant = useCallback(async () => {
     setErrorNotice('');
-    if (!providerRef.current || !providerRef.current.isSupported()) {
-      const msg = 'Speech recognition is not supported in this browser. You can type or use the push-to-talk button.';
+    if (typeof window === 'undefined') return false;
+
+    // 1. Check browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      const msg = 'Voice recognition is not supported in this browser. Please use a supported browser or use the Listen button.';
       setErrorNotice(msg);
+      setAssistantState('ERROR');
       announce(msg);
       return false;
     }
 
+    // 2. Check secure context
+    if (window.isSecureContext === false && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      const msg = 'Microphone access requires a secure (HTTPS) connection.';
+      setErrorNotice(msg);
+      setAssistantState('ERROR');
+      announce(msg);
+      return false;
+    }
+
+    // 3. Request microphone permission via navigator.mediaDevices.getUserMedia
+    setAssistantState('REQUESTING_PERMISSION');
+    announce('Requesting microphone permission');
+
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        // Immediately stop temporary stream tracks to free the audio device
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    } catch (err) {
+      console.warn('[VoiceAssistant] getUserMedia error:', err);
+      let msg = 'Microphone permission was denied. Please allow microphone access in your browser settings.';
+      if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        msg = 'No microphone was found on your device.';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        msg = 'Microphone is already in use by another application.';
+      }
+      setErrorNotice(msg);
+      announce(msg);
+      setAssistantState('ERROR');
+      setIsEnabled(false);
+      return false;
+    }
+
+    // 4. Permission granted: Initialize and start continuous wake word listening
     try {
       setIsEnabled(true);
-      setAssistantState('IDLE');
-      providerRef.current.start();
+      setAssistantState('READY');
+      announce('Voice Assistant is ready');
+
+      // Controlled transition to LISTENING_FOR_WAKE_WORD
+      setTimeout(() => {
+        setAssistantState('LISTENING_FOR_WAKE_WORD');
+        if (providerRef.current) {
+          providerRef.current.start();
+        }
+      }, 250);
 
       const welcomeMsg = "SARTHI Voice Assistant active. Say 'Hey Sarthi' to ask a question.";
       announce(welcomeMsg);
@@ -294,27 +415,24 @@ export const VoiceAssistantProvider = ({ children }) => {
       }
       return true;
     } catch (err) {
-      console.warn('[VoiceAssistant] Microphone access error:', err);
-      let msg = 'Microphone permission was denied. Please allow microphone access in your browser settings to use "Hey Sarthi".';
-      if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        msg = 'No microphone was found on your device.';
-      }
+      console.warn('[VoiceAssistant] Start error:', err);
+      const msg = err.message || 'Failed to start Voice Assistant';
       setErrorNotice(msg);
-      announce(msg);
+      setAssistantState('ERROR');
       setIsEnabled(false);
-      setAssistantState('DISABLED');
       return false;
     }
-  };
+  }, [activeLanguage, announce, blindMode, speakText, voiceMode]);
 
   /**
    * Disable Voice Assistant (full privacy, mic release)
    */
-  const disableVoiceAssistant = () => {
+  const disableVoiceAssistant = useCallback(() => {
     setIsEnabled(false);
     setAssistantState('DISABLED');
     setTranscript('');
     setErrorNotice('');
+    pendingCommandListenRef.current = false;
 
     if (stopSpeaking) {
       stopSpeaking();
@@ -323,39 +441,55 @@ export const VoiceAssistantProvider = ({ children }) => {
       providerRef.current.stop();
     }
     announce('SARTHI Voice Assistant disabled.');
-  };
+  }, [announce, stopSpeaking]);
+
+  /**
+   * Toggle Voice Assistant on / off
+   */
+  const toggleVoiceAssistant = useCallback(() => {
+    if (isEnabled) {
+      disableVoiceAssistant();
+    } else {
+      enableVoiceAssistant();
+    }
+  }, [disableVoiceAssistant, enableVoiceAssistant, isEnabled]);
 
   /**
    * Push-to-talk trigger (manual wake-up fallback)
    */
-  const triggerPushToTalk = () => {
+  const triggerPushToTalk = useCallback(async () => {
     if (stopSpeaking) stopSpeaking();
+    pendingCommandListenRef.current = false;
     playEarcon('wake');
 
     if (!isEnabled) {
-      enableVoiceAssistant().then((ok) => {
-        if (ok && providerRef.current) {
-          providerRef.current.startCommandListening();
-        }
-      });
+      const ok = await enableVoiceAssistant();
+      if (ok && providerRef.current) {
+        setAssistantState('LISTENING_FOR_COMMAND');
+        providerRef.current.startCommandListening();
+      }
     } else if (providerRef.current) {
+      setAssistantState('LISTENING_FOR_COMMAND');
       providerRef.current.startCommandListening();
     }
-  };
+  }, [enableVoiceAssistant, isEnabled, stopSpeaking]);
 
   /**
-   * Cancel current speech / listening and return to IDLE
+   * Cancel current speech / listening and return to LISTENING_FOR_WAKE_WORD
    */
-  const cancelCurrentInteraction = () => {
+  const cancelCurrentInteraction = useCallback(() => {
     if (stopSpeaking) stopSpeaking();
     setTranscript('');
+    pendingCommandListenRef.current = false;
     if (isEnabled && providerRef.current) {
-      setAssistantState('IDLE');
+      setAssistantState('LISTENING_FOR_WAKE_WORD');
+      providerRef.current.setSpeaking(false);
+      providerRef.current.setProcessing(false);
       providerRef.current.resumeWakeListening();
     } else {
       setAssistantState('DISABLED');
     }
-  };
+  }, [isEnabled, stopSpeaking]);
 
   // Global keyboard shortcuts:
   // - Mac: ⌘K or Option+V (⌥V) or ⌘Shift+V
@@ -369,11 +503,10 @@ export const VoiceAssistantProvider = ({ children }) => {
       const isShiftV = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v';
 
       if (isMacOptionV || isMacCmdK || isShiftV) {
-        // If user is inside an input, only trigger if it's Cmd+K or Option+V
         e.preventDefault();
         if (!isEnabled) {
           enableVoiceAssistant();
-        } else if (assistantState === 'SPEAKING' || assistantState === 'LISTENING') {
+        } else if (assistantState === 'SPEAKING' || assistantState === 'LISTENING_FOR_COMMAND') {
           cancelCurrentInteraction();
         } else {
           triggerPushToTalk();
@@ -383,13 +516,15 @@ export const VoiceAssistantProvider = ({ children }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isEnabled, assistantState]);
+  }, [isEnabled, assistantState, cancelCurrentInteraction, enableVoiceAssistant, triggerPushToTalk]);
 
   return (
     <VoiceAssistantContext.Provider
       value={{
         assistantState,
         isEnabled,
+        isAssistantEnabled: isEnabled, // Ensures Navbar.jsx works seamlessly
+        toggleVoiceAssistant,          // Ensures Navbar.jsx button works seamlessly
         transcript,
         lastResponse,
         errorNotice,
@@ -399,7 +534,7 @@ export const VoiceAssistantProvider = ({ children }) => {
         disableVoiceAssistant,
         triggerPushToTalk,
         cancelCurrentInteraction,
-        isSupported: providerRef.current ? providerRef.current.isSupported() : false,
+        isSupported: providerRef.current ? providerRef.current.isSupported() : Boolean(typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)),
       }}
     >
       {children}

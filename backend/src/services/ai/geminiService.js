@@ -21,13 +21,13 @@ import {
   formGuideOutputSchema,
 } from '../../validators/aiOutputSchema.js';
 
-const MODEL_NAME = env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+const MODEL_NAME = env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
 const FALLBACK_MODELS = [
   MODEL_NAME,
   'gemini-3.1-flash-lite',
-  'gemini-3.8-flash',
-  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
 ];
+
 
 let genAIClient = null;
 
@@ -485,14 +485,19 @@ export const geminiService = {
   /**
    * SARTHI Vision: Multi-modal visual understanding for blind and low-vision users
    */
-  async analyzeVision({ imageBuffer, imageMimeType, userLanguage = 'en' }) {
+  async analyzeVision({ imageBuffer, imageBase64Raw, imageMimeType, userLanguage = 'en', requestId = 'VISION-SYS' }) {
     const client = getClient();
     const prompt = buildVisionAnalysisPrompt(userLanguage);
 
-    if (client && imageBuffer && imageMimeType) {
+    const base64Data = imageBase64Raw || (imageBuffer ? imageBuffer.toString('base64') : null);
+
+    if (client && base64Data && imageMimeType) {
+      const tGeminiStart = Date.now();
+      console.log(`[Vision ${requestId}] Gemini started`);
       try {
-        const response = await callGeminiResilient(client, {
-          model: MODEL_NAME,
+        const timeoutMs = 25000;
+        const callPromise = callGeminiResilient(client, {
+          model: 'gemini-3.1-flash-lite',
           contents: [
             {
               role: 'user',
@@ -500,7 +505,7 @@ export const geminiService = {
                 { text: `${SYSTEM_VISION_PROMPT}\n\n${prompt}` },
                 {
                   inlineData: {
-                    data: imageBuffer.toString('base64'),
+                    data: base64Data,
                     mimeType: imageMimeType,
                   },
                 },
@@ -509,9 +514,21 @@ export const geminiService = {
           ],
           config: {
             responseMimeType: 'application/json',
-            temperature: 0.2,
+            temperature: 0.1,
           },
         });
+
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            const err = new Error('Gemini Vision analysis timed out after 25s.');
+            err.code = 'VISION_TIMEOUT';
+            reject(err);
+          }, timeoutMs);
+        });
+
+        const response = await Promise.race([callPromise, timeoutPromise]);
+        const geminiDuration = ((Date.now() - tGeminiStart) / 1000).toFixed(2);
+        console.log(`[Vision ${requestId}] Gemini completed in ${geminiDuration}s`);
 
         const rawText = response.text || (response.candidates?.[0]?.content?.parts?.[0]?.text);
         const parsed = extractJson(rawText);
@@ -525,8 +542,11 @@ export const geminiService = {
 
         throw new Error('Vision AI returned an empty response.');
       } catch (err) {
-        console.warn(`[SARTHI Vision] Gemini Vision call failed (${err.message}).`);
-        throw new Error(`Gemini Vision analysis failed: ${err.message}. Please check your connection and API key.`);
+        console.error(`[Vision ${requestId}] FAILED\nreason: ${err.message}`);
+        if (err.code === 'VISION_TIMEOUT') {
+          throw err;
+        }
+        throw new Error(`Gemini Vision analysis failed: ${err.message}`);
       }
     }
 

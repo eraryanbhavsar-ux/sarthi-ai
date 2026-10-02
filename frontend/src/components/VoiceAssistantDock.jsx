@@ -4,8 +4,6 @@ import { useAccessibility } from '../context/AccessibilityContext.jsx';
 import {
   Mic,
   MicOff,
-  Volume2,
-  BrainCircuit,
   Square,
   Sparkles,
   ChevronDown,
@@ -13,6 +11,7 @@ import {
   Shield,
   HelpCircle,
   X,
+  AlertCircle,
 } from 'lucide-react';
 
 export default function VoiceAssistantDock() {
@@ -37,53 +36,89 @@ export default function VoiceAssistantDock() {
   const shortcutLabel = isMac ? '⌘K / ⌥V' : 'Alt+V';
   const shortcutTitle = isMac ? 'Mac Shortcut: ⌘K or Option(⌥)+V (or simply say "Hey Sarthi")' : 'Shortcut: Alt+V (or simply say "Hey Sarthi")';
 
-  // Status configuration mapping
+  // Status configuration mapping corresponding strictly to state machine
   const statusConfig = {
     DISABLED: {
       badgeColor: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
       dotColor: 'bg-slate-400',
       title: 'Voice Assistant Off',
-      subtitle: 'Microphone is disconnected for privacy',
+      subtitle: 'Tap Enable or say "Hey Sarthi" to activate',
       ariaText: 'SARTHI Voice Assistant is off. Microphone is inactive.',
+    },
+    REQUESTING_PERMISSION: {
+      badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-800',
+      dotColor: 'bg-amber-500 animate-pulse',
+      title: 'Microphone access required',
+      subtitle: 'Please allow microphone access in your browser',
+      ariaText: 'Requesting microphone permission.',
+    },
+    READY: {
+      badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
+      dotColor: 'bg-emerald-500',
+      title: 'Voice Assistant is ready',
+      subtitle: 'Starting microphone listener...',
+      ariaText: 'SARTHI Voice Assistant is ready.',
+    },
+    LISTENING_FOR_WAKE_WORD: {
+      badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
+      dotColor: 'bg-emerald-500 animate-pulse',
+      title: 'Listening for Hey Sarthi…',
+      subtitle: 'Say "Hey Sarthi" or tap speak below',
+      ariaText: 'SARTHI Voice Assistant is active and listening for wake word: Hey Sarthi.',
     },
     IDLE: {
       badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
       dotColor: 'bg-emerald-500 animate-pulse',
-      title: 'Ready — Listening for "Hey Sarthi"',
+      title: 'Listening for Hey Sarthi…',
       subtitle: 'Say "Hey Sarthi" or tap speak below',
       ariaText: 'SARTHI Voice Assistant is active and listening for wake word: Hey Sarthi.',
     },
-    WAKE_WORD_DETECTED: {
+    WAKE_DETECTED: {
       badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-800',
       dotColor: 'bg-amber-500 animate-ping',
-      title: 'Wake Word Detected',
-      subtitle: 'Listening...',
+      title: 'Hey Sarthi detected',
+      subtitle: 'Yes? Listening…',
       ariaText: 'Hey Sarthi detected. Listening for command.',
+    },
+    LISTENING_FOR_COMMAND: {
+      badgeColor: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border-sky-300 dark:border-sky-800',
+      dotColor: 'bg-sky-500 animate-ping',
+      title: 'Listening…',
+      subtitle: 'Listening for your command…',
+      ariaText: 'SARTHI is listening to your voice command now.',
     },
     LISTENING: {
       badgeColor: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border-sky-300 dark:border-sky-800',
       dotColor: 'bg-sky-500 animate-ping',
-      title: 'I\'m Listening...',
-      subtitle: 'Speak your question or instruction naturally',
+      title: 'Listening…',
+      subtitle: 'Listening for your command…',
       ariaText: 'SARTHI is listening to your voice command now.',
     },
     PROCESSING: {
       badgeColor: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-300 dark:border-purple-800',
       dotColor: 'bg-purple-500 animate-spin',
-      title: 'Thinking...',
+      title: 'Thinking…',
       subtitle: 'SARTHI AI is analyzing your context',
       ariaText: 'SARTHI is thinking and processing your command.',
     },
     SPEAKING: {
       badgeColor: 'bg-brand-100 text-brand-800 dark:bg-brand-950 dark:text-brand-300 border-brand-300 dark:border-brand-800',
       dotColor: 'bg-brand-500 animate-pulse',
-      title: 'SARTHI is Speaking',
-      subtitle: 'Tap stop or say "Hey Sarthi" to interrupt',
+      title: 'SARTHI is speaking…',
+      subtitle: 'Tap stop to interrupt',
       ariaText: 'SARTHI is speaking the answer.',
+    },
+    ERROR: {
+      badgeColor: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-300 dark:border-rose-800',
+      dotColor: 'bg-rose-500',
+      title: 'Voice Assistant Notice',
+      subtitle: 'Tap to retry or check browser settings',
+      ariaText: 'A voice assistant error occurred.',
     },
   };
 
   const currentStatus = statusConfig[assistantState] || statusConfig.DISABLED;
+  const isListeningCommand = assistantState === 'LISTENING_FOR_COMMAND' || assistantState === 'LISTENING';
 
   const sampleCommands = [
     'What is the deadline?',
@@ -114,7 +149,7 @@ export default function VoiceAssistantDock() {
         {/* Header Bar */}
         <div className="p-3 sm:p-3.5 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
               isEnabled ? 'bg-brand-600 text-white shadow-xs' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
             }`}>
               <Mic className="w-4 h-4" aria-hidden="true" />
@@ -158,7 +193,7 @@ export default function VoiceAssistantDock() {
         {/* Expandable Body */}
         {isExpanded && (
           <div className="p-3.5 space-y-3">
-            {/* Status Pill & Privacy Indicator */}
+            {/* Status Pill & Real-time State Indicator */}
             <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${currentStatus.badgeColor}`}>
               <div className="flex items-center gap-2 min-w-0">
                 <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${currentStatus.dotColor}`} />
@@ -186,8 +221,8 @@ export default function VoiceAssistantDock() {
               )}
             </div>
 
-            {/* Live Audio Waves when Listening */}
-            {assistantState === 'LISTENING' && (
+            {/* Live Audio Waves when Listening for command */}
+            {isListeningCommand && (
               <div className="flex items-center justify-center gap-1 py-1" aria-hidden="true">
                 <span className="w-1.5 h-4 bg-sky-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                 <span className="w-1.5 h-7 bg-sky-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -218,7 +253,7 @@ export default function VoiceAssistantDock() {
             {/* Error or TTS Notice banner */}
             {(errorNotice || ttsNotice) && (
               <div className="p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-1.5">
-                <Shield className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
                 <span className="flex-1">{errorNotice || ttsNotice}</span>
               </div>
             )}
@@ -255,14 +290,14 @@ export default function VoiceAssistantDock() {
                 disabled={!isSupported}
                 title={shortcutTitle}
                 className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-xs ${
-                  assistantState === 'LISTENING'
+                  isListeningCommand
                     ? 'bg-rose-500 hover:bg-rose-600 text-white animate-pulse'
                     : 'bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white'
                 }`}
-                aria-label={assistantState === 'LISTENING' ? 'Listening to voice command' : 'Tap to speak a voice command'}
+                aria-label={isListeningCommand ? 'Listening to voice command' : 'Tap to speak a voice command'}
               >
                 <Mic className="w-4 h-4" />
-                <span>{assistantState === 'LISTENING' ? 'Listening...' : 'Tap to Speak'}</span>
+                <span>{isListeningCommand ? 'Listening…' : 'Tap to Speak'}</span>
               </button>
 
               {/* Always-on toggle */}

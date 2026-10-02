@@ -8,19 +8,27 @@ import {
   deleteVisionSession,
   getVisionSample,
   translateVision,
+  diagnosticVisionTest,
 } from '../controllers/visionController.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
-import { aiLimiter } from '../middleware/rateLimiter.js';
+import { aiLimiter, visionLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
+
+/**
+ * @route   POST /api/vision/diagnostic-test
+ * @desc    Phase 7 development test with known static image
+ * @access  Public
+ */
+router.post('/diagnostic-test', diagnosticVisionTest);
 
 /**
  * @route   POST /api/vision/analyze
  * @desc    Analyze live camera frame or uploaded image for accessibility
  * @access  Public / Optional Auth
  */
-router.post('/analyze', aiLimiter, optionalAuth, upload.single('file'), analyzeVision);
+router.post('/analyze', visionLimiter, optionalAuth, upload.single('file'), analyzeVision);
 
 /**
  * @route   POST /api/vision/translate

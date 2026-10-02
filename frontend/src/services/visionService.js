@@ -4,7 +4,12 @@ export const visionService = {
   /**
    * Analyze image (from camera snapshot base64 or file upload)
    */
-  async analyzeVision({ file, imageBase64, language = 'en', guestId, capturedViaCamera = false, fileName, signal }) {
+  async analyzeVision({ file, imageBase64, language = 'en', guestId, capturedViaCamera = false, fileName, signal, requestId }) {
+    const headers = {};
+    if (requestId) {
+      headers['x-vision-request-id'] = requestId;
+    }
+
     if (file) {
       const formData = new FormData();
       formData.append('file', file);
@@ -12,9 +17,12 @@ export const visionService = {
       if (guestId) formData.append('guestId', guestId);
       formData.append('capturedViaCamera', String(capturedViaCamera));
       if (fileName) formData.append('fileName', fileName);
+      if (requestId) formData.append('requestId', requestId);
+
+      headers['Content-Type'] = 'multipart/form-data';
 
       const res = await api.post('/vision/analyze', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers,
         signal,
       });
       return res.data;
@@ -25,7 +33,11 @@ export const visionService = {
         guestId,
         capturedViaCamera,
         fileName,
-      }, { signal });
+        requestId,
+      }, {
+        headers,
+        signal,
+      });
       return res.data;
     }
   },

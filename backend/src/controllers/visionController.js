@@ -7,12 +7,17 @@ import { userRepo } from '../models/userRepo.js';
  */
 
 export async function analyzeVision(req, res, next) {
+  const tStart = Date.now();
+  const requestId = req.headers['x-vision-request-id'] || req.body?.requestId || ('VISION-' + Date.now().toString().slice(-3));
+  console.log(`[Vision ${requestId}] backend received`);
+
   try {
     const file = req.file;
     const { imageBase64, language = 'en', guestId, capturedViaCamera = false, fileName = 'Vision_Snapshot.jpg' } = req.body;
     const userId = req.user ? (req.user._id || req.user.id) : null;
 
     let imageBuffer = null;
+    let imageBase64Raw = null;
     let imageMimeType = 'image/jpeg';
     let fileSize = 0;
 
@@ -25,57 +30,97 @@ export async function analyzeVision(req, res, next) {
       const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
       if (matches && matches.length === 3) {
         imageMimeType = matches[1];
-        imageBuffer = Buffer.from(matches[2], 'base64');
+        imageBase64Raw = matches[2];
+        fileSize = Math.round((matches[2].length * 3) / 4);
       } else {
-        imageBuffer = Buffer.from(imageBase64, 'base64');
+        imageBase64Raw = imageBase64;
+        fileSize = Math.round((imageBase64.length * 3) / 4);
       }
-      fileSize = imageBuffer.length;
     } else {
+      console.error(`[Vision ${requestId}] FAILED\nreason: Empty or missing image payload`);
       return res.status(400).json({
         success: false,
+        requestId,
         error: 'Please capture an image using your camera or upload a photo to analyze.',
+        reason: 'Invalid image payload (missing frame)',
       });
     }
 
+    console.log(`[Vision ${requestId}] frame: ~${Math.round(fileSize / 1024)} KB (${imageMimeType})`);
+
     // Validate size (max 10MB)
     if (fileSize > 10 * 1024 * 1024) {
+      console.error(`[Vision ${requestId}] FAILED\nreason: Image exceeds 10MB`);
       return res.status(400).json({
         success: false,
+        requestId,
         error: 'Image file size must not exceed 10 MB.',
+        reason: 'Image file size exceeds 10 MB limit',
       });
     }
 
     // Validate image MIME type
     const validMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     if (!validMimes.includes(imageMimeType)) {
+      console.error(`[Vision ${requestId}] FAILED\nreason: Invalid MIME type ${imageMimeType}`);
       return res.status(400).json({
         success: false,
+        requestId,
         error: 'Please provide a valid JPEG, PNG, or WebP image.',
+        reason: `Unsupported image MIME type: ${imageMimeType}`,
       });
     }
 
-    // Run multimodal vision analysis
-    const analysis = await geminiService.analyzeVision({
-      imageBuffer,
-      imageMimeType,
-      userLanguage: language,
-    });
+    // Run multimodal vision analysis with graceful timeout catching
+    let analysis;
+    const aiStart = Date.now();
+    try {
+      analysis = await geminiService.analyzeVision({
+        imageBuffer,
+        imageBase64Raw,
+        imageMimeType,
+        userLanguage: language,
+        requestId,
+      });
+      const aiElapsed = ((Date.now() - aiStart) / 1000).toFixed(2);
+      console.log(`[Vision ${requestId}] Gemini completed in ${aiElapsed}s`);
+    } catch (aiErr) {
+      const aiElapsed = ((Date.now() - aiStart) / 1000).toFixed(2);
+      console.error(`[Vision ${requestId}] FAILED after ${aiElapsed}s\nreason: ${aiErr.message}`);
+
+      if (aiErr.code === 'VISION_TIMEOUT' || aiErr.message?.includes('timed out')) {
+        return res.status(504).json({
+          success: false,
+          requestId,
+          error: 'VISION_TIMEOUT',
+          reason: 'Gemini request timed out',
+          message: 'Vision analysis is taking too long. Please try again.',
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        requestId,
+        error: aiErr.message || 'Vision AI inference failed',
+        reason: aiErr.message || 'Gemini processing error',
+      });
+    }
 
     // Persist vision session
     const sessionData = {
       userId: userId || null,
       guestId: guestId || (userId ? null : `guest_${Date.now()}`),
       description: analysis.description,
-      visibleText: analysis.visibleText,
-      importantInformation: analysis.importantInformation,
-      objects: analysis.objects,
-      possibleActions: analysis.possibleActions,
-      warnings: analysis.warnings,
-      isDocument: analysis.isDocument,
+      visibleText: analysis.visibleText || [],
+      importantInformation: analysis.importantInformation || [],
+      objects: analysis.objects || [],
+      possibleActions: analysis.possibleActions || [],
+      warnings: analysis.warnings || [],
+      isDocument: analysis.isDocument || false,
       documentHeading: analysis.documentHeading || '',
       confidence: analysis.confidence || 'high',
-      spatialLayout: analysis.spatialLayout,
-      detectedForm: analysis.detectedForm,
+      spatialLayout: analysis.spatialLayout || '',
+      detectedForm: analysis.detectedForm || { hasForm: false, fields: [] },
       activeLanguage: language,
       fileMetadata: {
         fileName: file ? file.originalname : fileName,
@@ -92,13 +137,61 @@ export async function analyzeVision(req, res, next) {
       await userRepo.incrementStat(userId, 'visionScansCompleted', 1);
     }
 
+    const totalSeconds = ((Date.now() - tStart) / 1000).toFixed(2);
+    console.log(`[Vision ${requestId}] total: ${totalSeconds}s`);
+
     return res.status(200).json({
       success: true,
+      requestId,
+      durationMs: Date.now() - tStart,
       session: savedSession,
       analysis,
     });
   } catch (err) {
-    next(err);
+    console.error(`[Vision ${requestId}] FAILED\nreason: HTTP 500\nbackend error: ${err.message}`);
+    return res.status(500).json({
+      success: false,
+      requestId,
+      error: err.message,
+      reason: `Backend error: ${err.message}`,
+    });
+  }
+}
+
+/**
+ * Phase 7: Development-only diagnostic endpoint to test Gemini with a known static image
+ */
+export async function diagnosticVisionTest(req, res) {
+  const tStart = Date.now();
+  const requestId = 'VISION-DIAG-' + Date.now().toString().slice(-4);
+  console.log(`[Vision ${requestId}] diagnostic test started`);
+
+  try {
+    // 1x1 transparent/white pixel JPEG
+    const staticBase64 = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+    const analysis = await geminiService.analyzeVision({
+      imageBase64Raw: staticBase64,
+      imageMimeType: 'image/jpeg',
+      userLanguage: 'en',
+      requestId,
+    });
+
+    const totalTime = ((Date.now() - tStart) / 1000).toFixed(2);
+    console.log(`[Vision ${requestId}] diagnostic completed in ${totalTime}s`);
+    return res.status(200).json({
+      success: true,
+      requestId,
+      totalDurationSeconds: totalTime,
+      analysis,
+    });
+  } catch (err) {
+    console.error(`[Vision ${requestId}] diagnostic FAILED:`, err.message);
+    return res.status(500).json({
+      success: false,
+      requestId,
+      error: err.message,
+      reason: `Diagnostic failed: ${err.message}`,
+    });
   }
 }
 

@@ -32,3 +32,15 @@ export const aiLimiter = rateLimit({
     error: 'SARTHI AI request rate limit reached. Please wait a moment before sending another query.',
   },
 });
+
+export const visionLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 80, // 80 vision frames per minute to smoothly support 2-4s periodic analysis without false 429 errors
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'SARTHI Vision rate limit reached. Retrying...',
+  },
+});
+

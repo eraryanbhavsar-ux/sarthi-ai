@@ -236,38 +236,18 @@ CRITICAL ACCESSIBILITY & SAFETY RULES:
 6. OUTPUT FORMAT: Return strictly valid JSON conforming to the schema.`;
 
 export function buildVisionAnalysisPrompt(userLanguage = 'en') {
-  return `Analyze this live camera view or image for a blind or low-vision user.
-Target output language: ${userLanguage}. If target language is an Indian regional language (e.g., mr, hi, gu, ta, te, bn, kn, ml, pa, or), formulate the description, important information, and warnings in that language's native script.
+  return `Describe the most important visible information in this image for a person who cannot see it clearly. Mention prominent objects, text that is clearly readable, and relevant visual context. Be concise and avoid guessing.
+Target response: 1-3 short sentences.
+Output language: ${userLanguage}. If target language is an Indian regional language (e.g. hi, mr, gu, ta, te, bn, kn, ml, pa, or), provide description and heading in that language script.
 
-Provide your output as a JSON object with this exact structure:
+Return strictly a valid JSON object matching this schema:
 {
-  "description": "Concise 1-2 sentence overview answering 'What am I looking at?' in simple language (e.g., 'I can see a water bottle on a table.'). Use cautious language if confidence is low.",
-  "confidence": "high",
+  "description": "1-3 concise, direct sentences answering 'What am I looking at?' in simple language.",
+  "objects": ["prominent object 1", "prominent object 2"],
+  "visibleText": ["Clearly readable line of text or heading, or leave empty if none"],
   "isDocument": false,
-  "documentHeading": "Visible document heading or title if present, otherwise empty string",
-  "visibleText": [
-    "Extracted text line or paragraph 1",
-    "Extracted text line 2"
-  ],
-  "importantInformation": [
-    "Key detail 1 (e.g., Dates, totals, names, deadlines, instructions)",
-    "Key detail 2"
-  ],
-  "objects": [
-    "water bottle",
-    "table"
-  ],
-  "possibleActions": [
-    "Recommended practical action if any"
-  ],
-  "warnings": [
-    "Important caution or warning symbol if any"
-  ],
-  "spatialLayout": "Brief layout description (e.g., 'In the center of the frame on a wooden surface')",
-  "detectedForm": {
-    "hasForm": false,
-    "fields": []
-  }
+  "documentHeading": "Document heading if clearly present, otherwise empty string",
+  "confidence": "high"
 }`;
 }
 

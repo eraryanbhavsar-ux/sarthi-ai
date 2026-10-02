@@ -2,7 +2,7 @@
  * SARTHI AI - Wake Word & Voice Recognition Architecture
  *
  * WakeWordProvider
- * ├── BrowserWakeWordProvider (Native Web Speech API with continuous loop)
+ * ├── BrowserWakeWordProvider (Native Web Speech API with continuous wake-word & command recognition)
  * └── DedicatedWakeWordProvider (Extensible interface for Picovoice Porcupine / OpenWakeWord WASM)
  */
 
@@ -52,6 +52,30 @@ export class WakeWordProvider {
 }
 
 /**
+ * Normalize spoken speech recognition text:
+ * - lowercase
+ * - trim whitespace
+ * - remove unnecessary punctuation
+ * - normalize repeated spaces
+ */
+export function normalizeRecognitionText(rawText = '') {
+  if (!rawText) return '';
+  return rawText
+    .toLowerCase()
+    .replace(/[,\.\?!:;\-_"'\(\)\[\]\{\}\/\\~`।॥]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Robust wake-word regex matching variations of "Hey Sarthi":
+ * - "hey sarthi", "Hey Sarthi", "hey, Sarthi", "hey sarathi", "he sarthi"
+ * - "hi sarthi", "hello sarthi", "ok sarthi", "okay sarthi"
+ * - "हे सारथी", "सार्थी"
+ */
+export const WAKE_PHRASE_REGEX = /(?:^|\s)(?:hey|he|hi|hello|ok|okay|हे|हाय|हॅलो)\s+(?:sarthi|sarathi|saarthi|सारथी|सार्थी|सारथि)(?:\s|$)/i;
+
+/**
  * BrowserWakeWordProvider
  * Lightweight, zero-dependency browser implementation utilizing standard SpeechRecognition.
  * Real-time pattern matching for "Hey Sarthi" variations without sending ambient audio to servers.
@@ -60,19 +84,20 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
   constructor(options = {}) {
     super();
     this.options = {
-      lang: options.lang || 'en-US',
-      commandTimeoutMs: options.commandTimeoutMs || 7000,
+      lang: options.lang || 'en-IN',
+      commandTimeoutMs: options.commandTimeoutMs || 8000,
       ...options,
     };
 
     this.recognition = null;
-    this.mode = 'IDLE'; // 'WAKE_WORD_LISTENING' | 'COMMAND_LISTENING' | 'IDLE'
+    this.mode = 'DISABLED'; // 'DISABLED' | 'READY' | 'LISTENING_FOR_WAKE_WORD' | 'WAKE_DETECTED' | 'LISTENING_FOR_COMMAND' | 'PROCESSING' | 'SPEAKING' | 'ERROR'
     this.isManualStop = false;
+    this.isSpeaking = false;
+    this.isProcessing = false;
+    this.permissionDenied = false;
+    this.isRecognizing = false;
     this.restartTimer = null;
     this.commandTimer = null;
-
-    // Wake phrase regex: matches "Hey Sarthi", "Hi Sarthi", "Sarthi", "हे सारथी", and Indian English/Hindi variants
-    this.wakeWordRegex = /\b(hey|hi|hello|ok|okay|ay|aye|oye|arre|bolo|suno|सुनो|हे|अरे)?\s*(sarthi|sarathi|sarathy|saarthi|sharthi|sathi|saathi|sarthee|sarthe|सारथी|सार्थी|सारथि|सारथीजी)\b/i;
   }
 
   isSupported() {
@@ -82,28 +107,34 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
     );
   }
 
-  start() {
-    if (!this.isSupported()) {
-      this.emit('error', {
-        code: 'UNSUPPORTED',
-        message: 'Speech recognition is not supported in this browser.',
-      });
-      return false;
+  setLanguage(newLang) {
+    if (newLang && this.options.lang !== newLang) {
+      this.options.lang = newLang;
+      if (this.mode === 'LISTENING_FOR_WAKE_WORD') {
+        this.startWakeWordListening();
+      }
     }
-
-    if (this.isActive) return true;
-
-    this.isActive = true;
-    this.isManualStop = false;
-    this.startWakeWordListening();
-    return true;
   }
 
-  stop() {
-    this.isActive = false;
-    this.isManualStop = true;
-    this.mode = 'IDLE';
+  setSpeaking(isSpeaking) {
+    this.isSpeaking = Boolean(isSpeaking);
+    if (this.isSpeaking) {
+      this.stopActiveRecognition();
+      this.mode = 'SPEAKING';
+      this.emit('stateChange', { mode: 'SPEAKING', isListening: false });
+    }
+  }
 
+  setProcessing(isProcessing) {
+    this.isProcessing = Boolean(isProcessing);
+    if (this.isProcessing) {
+      this.stopActiveRecognition();
+      this.mode = 'PROCESSING';
+      this.emit('stateChange', { mode: 'PROCESSING', isListening: false });
+    }
+  }
+
+  stopActiveRecognition() {
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
@@ -115,68 +146,108 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
 
     if (this.recognition) {
       try {
+        this.recognition.onstart = null;
+        this.recognition.onresult = null;
+        this.recognition.onerror = null;
+        this.recognition.onend = null;
         this.recognition.abort();
       } catch (_) {}
       this.recognition = null;
     }
+    this.isRecognizing = false;
+  }
 
+  start() {
+    if (!this.isSupported()) {
+      this.emit('error', {
+        code: 'UNSUPPORTED',
+        message: 'Speech recognition is not supported in this browser.',
+      });
+      return false;
+    }
+
+    this.isActive = true;
+    this.isManualStop = false;
+    this.permissionDenied = false;
+    this.startWakeWordListening();
+    return true;
+  }
+
+  stop() {
+    this.isActive = false;
+    this.isManualStop = true;
+    this.isSpeaking = false;
+    this.isProcessing = false;
+    this.mode = 'DISABLED';
+
+    this.stopActiveRecognition();
     this.emit('stateChange', { mode: 'DISABLED', isListening: false });
   }
 
   startWakeWordListening() {
-    if (!this.isActive || this.isManualStop) return;
+    if (!this.isActive || this.isManualStop || this.isSpeaking || this.isProcessing || this.permissionDenied) {
+      return;
+    }
 
-    this.mode = 'WAKE_WORD_LISTENING';
-    this.emit('stateChange', { mode: 'WAKE_WORD_LISTENING', isListening: true });
+    this.stopActiveRecognition();
+
+    this.mode = 'LISTENING_FOR_WAKE_WORD';
+    this.emit('stateChange', { mode: 'LISTENING_FOR_WAKE_WORD', isListening: true });
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
     try {
-      if (this.recognition) {
-        try { this.recognition.abort(); } catch (_) {}
-      }
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = this.options.lang;
 
-      this.recognition = new SpeechRecognition();
-      this.recognition.continuous = true;
-      this.recognition.interimResults = true;
-      this.recognition.lang = this.options.lang;
-
-      this.recognition.onstart = () => {
+      rec.onstart = () => {
+        this.isRecognizing = true;
         this.emit('start', { mode: this.mode });
       };
 
-      this.recognition.onresult = (event) => {
-        if (this.mode !== 'WAKE_WORD_LISTENING') return;
+      rec.onresult = (event) => {
+        if (this.mode !== 'LISTENING_FOR_WAKE_WORD' || this.isSpeaking || this.isProcessing) return;
 
         let fullTranscript = '';
         for (let i = 0; i < event.results.length; i++) {
           fullTranscript += ' ' + event.results[i][0].transcript;
         }
 
-        const trimmed = fullTranscript.trim();
-        if (!trimmed) return;
+        const normalized = normalizeRecognitionText(fullTranscript);
+        if (!normalized) return;
 
         // Check for wake word
-        const match = this.wakeWordRegex.exec(trimmed);
+        const match = WAKE_PHRASE_REGEX.exec(normalized);
         if (match) {
           const wakePhrase = match[0];
           // Extract any immediate command following the wake word
-          const postMatch = trimmed.substring(match.index + wakePhrase.length).trim();
+          const postMatch = normalized.substring(match.index + wakePhrase.length).trim();
           const cleanImmediate = postMatch.replace(/^[,:\.\s]+/, '').trim();
 
           this.handleWakeDetected(cleanImmediate);
         }
       };
 
-      this.recognition.onerror = (event) => {
-        if (event.error === 'no-speech') {
-          // Normal background silence, continue
+      rec.onerror = (event) => {
+        if (event.error === 'no-speech' || event.error === 'aborted') {
           return;
         }
-        if (event.error === 'not-allowed') {
-          this.isActive = false;
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          this.permissionDenied = true;
+          this.stop();
           this.emit('error', {
             code: 'PERMISSION_DENIED',
-            message: 'Microphone permission was denied. Please allow microphone access.',
+            message: 'Microphone permission was denied. Please allow microphone access in your browser settings.',
+          });
+          return;
+        }
+        if (event.error === 'audio-capture') {
+          this.emit('error', {
+            code: 'AUDIO_CAPTURE',
+            message: 'No microphone was found or microphone is unavailable.',
           });
           return;
         }
@@ -184,79 +255,102 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
         console.warn('[BrowserWakeWordProvider] Recognition error:', event.error);
       };
 
-      this.recognition.onend = () => {
-        // Automatic restart loop for continuous wake word detection
-        if (this.isActive && !this.isManualStop && this.mode === 'WAKE_WORD_LISTENING') {
+      rec.onend = () => {
+        this.isRecognizing = false;
+        // Controlled restart loop for continuous wake word detection
+        if (
+          this.isActive &&
+          !this.isManualStop &&
+          !this.isSpeaking &&
+          !this.isProcessing &&
+          !this.permissionDenied &&
+          this.mode === 'LISTENING_FOR_WAKE_WORD'
+        ) {
+          if (this.restartTimer) clearTimeout(this.restartTimer);
           this.restartTimer = setTimeout(() => {
             this.startWakeWordListening();
-          }, 250);
+          }, 300);
         }
       };
 
-      this.recognition.start();
+      this.recognition = rec;
+      rec.start();
     } catch (err) {
+      this.isRecognizing = false;
       console.warn('[BrowserWakeWordProvider] Start failed:', err);
-      if (this.isActive && !this.isManualStop) {
+      if (
+        this.isActive &&
+        !this.isManualStop &&
+        !this.isSpeaking &&
+        !this.isProcessing &&
+        !this.permissionDenied
+      ) {
+        if (this.restartTimer) clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => this.startWakeWordListening(), 1000);
       }
     }
   }
 
   handleWakeDetected(immediateCommand = '') {
-    // 1. Temporarily abort wake recognition
-    if (this.recognition) {
-      try { this.recognition.abort(); } catch (_) {}
-    }
+    this.stopActiveRecognition();
+    this.mode = 'WAKE_DETECTED';
+    this.emit('stateChange', { mode: 'WAKE_DETECTED', isListening: false });
 
-    // 2. Notify system that wake word was detected
+    const hasImmediateCommand = Boolean(immediateCommand && immediateCommand.trim().length > 1);
+
+    // Notify listeners that wake word was detected
     this.emit('wake', {
       wakeWord: 'Hey Sarthi',
-      immediateCommand,
-      hasImmediateCommand: Boolean(immediateCommand && immediateCommand.length > 2),
+      immediateCommand: immediateCommand || '',
+      hasImmediateCommand,
     });
 
-    if (immediateCommand && immediateCommand.length > 2) {
+    if (hasImmediateCommand) {
       // User said: "Hey Sarthi, what is the deadline?" in one breath!
       this.emit('command', { transcript: immediateCommand });
-      // Return to wake listening
-      setTimeout(() => {
-        if (this.isActive && !this.isManualStop) {
-          this.startWakeWordListening();
-        }
-      }, 500);
-    } else {
-      // Switch into dedicated command capture mode
-      this.startCommandListening();
     }
+    // Note: If no immediate command was spoken, the caller (VoiceAssistantContext)
+    // will speak "Yes? How can I help?" and then invoke startCommandListening()
+    // AFTER TTS has completed!
   }
 
   startCommandListening() {
-    this.mode = 'COMMAND_LISTENING';
-    this.emit('stateChange', { mode: 'COMMAND_LISTENING', isListening: true });
+    if (!this.isActive || this.isManualStop || this.isSpeaking) return;
+
+    this.stopActiveRecognition();
+    this.mode = 'LISTENING_FOR_COMMAND';
+    this.emit('stateChange', { mode: 'LISTENING_FOR_COMMAND', isListening: true });
 
     // Set timeout in case user says nothing after "Hey Sarthi"
     if (this.commandTimer) clearTimeout(this.commandTimer);
     this.commandTimer = setTimeout(() => {
       this.emit('commandTimeout', {
-        message: "I didn't hear a command. Say 'Hey Sarthi' when you're ready.",
+        message: "I didn't catch that. Please try again.",
       });
-      if (this.isActive && !this.isManualStop) {
-        this.startWakeWordListening();
-      }
+      this.resumeWakeListening();
     }, this.options.commandTimeoutMs);
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
     try {
-      this.recognition = new SpeechRecognition();
-      this.recognition.continuous = false;
-      this.recognition.interimResults = true;
-      this.recognition.lang = this.options.lang;
+      const rec = new SpeechRecognition();
+      rec.continuous = false; // Capture command utterance
+      rec.interimResults = true;
+      rec.lang = this.options.lang;
 
       let finalTranscript = '';
       let lastInterim = '';
       let commandEmitted = false;
 
-      this.recognition.onresult = (event) => {
+      rec.onstart = () => {
+        this.isRecognizing = true;
+        this.emit('start', { mode: this.mode });
+      };
+
+      rec.onresult = (event) => {
+        if (this.mode !== 'LISTENING_FOR_COMMAND' || this.isSpeaking) return;
+
         let interim = '';
         for (let i = 0; i < event.results.length; i++) {
           const part = event.results[i][0].transcript;
@@ -274,44 +368,46 @@ export class BrowserWakeWordProvider extends WakeWordProvider {
         if (event.results[0]?.isFinal && currentText && !commandEmitted) {
           commandEmitted = true;
           if (this.commandTimer) clearTimeout(this.commandTimer);
+          this.stopActiveRecognition();
+          this.mode = 'PROCESSING';
           this.emit('command', { transcript: currentText });
         }
       };
 
-      this.recognition.onerror = (event) => {
+      rec.onerror = (event) => {
         if (this.commandTimer) clearTimeout(this.commandTimer);
-        if (event.error !== 'no-speech') {
+        if (event.error !== 'no-speech' && event.error !== 'aborted') {
           console.warn('[CommandCapture] Error:', event.error);
         }
       };
 
-      this.recognition.onend = () => {
+      rec.onend = () => {
+        this.isRecognizing = false;
         if (this.commandTimer) clearTimeout(this.commandTimer);
+
         const cleanCmd = (finalTranscript || lastInterim || '').trim();
         if (!commandEmitted && cleanCmd) {
           commandEmitted = true;
+          this.stopActiveRecognition();
+          this.mode = 'PROCESSING';
           this.emit('command', { transcript: cleanCmd });
+        } else if (!commandEmitted) {
+          // No command detected, return to wake listening
+          this.resumeWakeListening();
         }
-
-        // Return to wake listening after brief pause
-        setTimeout(() => {
-          if (this.isActive && !this.isManualStop && this.mode !== 'PROCESSING') {
-            this.startWakeWordListening();
-          }
-        }, 600);
       };
 
-      this.recognition.start();
+      this.recognition = rec;
+      rec.start();
     } catch (err) {
+      this.isRecognizing = false;
       console.warn('[CommandCapture] Failed to start command recognition:', err);
-      if (this.isActive && !this.isManualStop) {
-        this.startWakeWordListening();
-      }
+      this.resumeWakeListening();
     }
   }
 
   resumeWakeListening() {
-    if (this.isActive && !this.isManualStop) {
+    if (this.isActive && !this.isManualStop && !this.isSpeaking && !this.isProcessing) {
       this.startWakeWordListening();
     }
   }

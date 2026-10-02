@@ -7,7 +7,7 @@ import { SYSTEM_ACCESSIBILITY_PROMPT } from './prompts.js';
 export function stripWakeWord(rawTranscript = '') {
   if (!rawTranscript) return '';
   return rawTranscript
-    .replace(/^(hey|hi|hello|ok|okay)?\s*(sarthi|sarathi|sarathy|saarthi|सारथी)[,\.\?!:]*\s*/i, '')
+    .replace(/^(hey|he|hi|hello|ok|okay|हे|हाय|हॅलो)?\s*(sarthi|sarathi|sarathy|saarthi|सारथी|सार्थी|सारथि)[,\.\?!:]*\s*/i, '')
     .trim();
 }
 
@@ -69,7 +69,7 @@ export function detectLanguageIntent(commandText = '') {
 /**
  * Handle quick deterministic client-level voice navigation or immediate control
  */
-export function checkInstantCommand(cleanedTranscript = '') {
+export function checkInstantCommand(cleanedTranscript = '', { hasExistingVisionContext = false } = {}) {
   const lower = cleanedTranscript.toLowerCase().trim();
 
   if (lower === 'stop' || lower === 'pause' || lower === 'be quiet' || lower === 'quiet') {
@@ -87,6 +87,10 @@ export function checkInstantCommand(cleanedTranscript = '') {
     lower.includes('what do you see') ||
     lower.includes('describe this scene')
   ) {
+    if (hasExistingVisionContext) {
+      // Don't intercept! Let contextual Gemini explain what is in front of the camera using the existing vision context
+      return null;
+    }
     return {
       intent: 'DESCRIBE_VISION',
       spokenResponse: 'Analyzing what is in front of the camera.',
@@ -179,8 +183,17 @@ export async function routeVoiceCommand({
     };
   }
 
+  const hasExistingVisionContext = Boolean(
+    visionSession &&
+      (visionSession.description ||
+        visionSession.visibleText ||
+        visionSession.extractedText ||
+        (Array.isArray(visionSession.importantInformation) && visionSession.importantInformation.length > 0) ||
+        (Array.isArray(visionSession.objects) && visionSession.objects.length > 0))
+  );
+
   // 1. Check instant local commands (e.g. stop, navigation)
-  const instant = checkInstantCommand(command);
+  const instant = checkInstantCommand(command, { hasExistingVisionContext });
   if (instant) return instant;
 
   // 2. Prepare Context Payload
@@ -328,13 +341,43 @@ Return strictly a JSON object:
     };
   }
 
-  if (lowerCmd.includes('explain') || lowerCmd.includes('summarize') || lowerCmd.includes('what is this') || lowerCmd.includes('tell me about')) {
-    const spoken = session?.simpleExplanation || visionSession?.description || "SARTHI simplifies complex documents, translates them, and guides you step-by-step.";
+  if (
+    lowerCmd.includes('explain') ||
+    lowerCmd.includes('summarize') ||
+    lowerCmd.includes('what is this') ||
+    lowerCmd.includes('tell me about') ||
+    lowerCmd.includes('what do you see') ||
+    lowerCmd.includes('what am i looking at') ||
+    lowerCmd.includes('describe what you see') ||
+    lowerCmd.includes('describe this scene')
+  ) {
+    const spoken =
+      session?.simpleExplanation ||
+      session?.summary ||
+      visionSession?.description ||
+      (visionSession?.visibleText ? `I see text in the image: ${visionSession.visibleText}` : null) ||
+      'SARTHI simplifies complex documents, translates them, and guides you step-by-step.';
     return {
-      intent: 'EXPLAIN',
+      intent: visionSession ? 'VISION' : 'EXPLAIN',
       spokenResponse: spoken.substring(0, 180),
       visualResponse: spoken,
-      action: { type: 'FOCUS_SECTION', payload: { section: 'summary' } },
+      action: { type: 'FOCUS_SECTION', payload: { section: visionSession ? 'vision' : 'summary' } },
+    };
+  }
+
+  if (
+    lowerCmd.includes('what can you do') ||
+    lowerCmd.includes('what can you help') ||
+    lowerCmd.includes('who are you') ||
+    lowerCmd.includes('how can you help') ||
+    lowerCmd.includes('what do you do')
+  ) {
+    const spoken = "I am SARTHI, your accessibility voice assistant. I can explain official documents, find deadlines and required certificates, translate into regional Indian languages, and describe what's in front of your camera.";
+    return {
+      intent: 'GENERAL',
+      spokenResponse: spoken,
+      visualResponse: spoken,
+      action: { type: 'NONE' },
     };
   }
 
