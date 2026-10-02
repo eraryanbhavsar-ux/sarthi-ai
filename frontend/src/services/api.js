@@ -31,7 +31,30 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const config = error.config;
+    // Dual-route resilience: If request to direct Render URL fails with a network/CORS error on Vercel,
+    // automatically retry via the same-origin Vercel reverse proxy (/api)
+    if (
+      config &&
+      !config._fallbackTried &&
+      typeof window !== 'undefined' &&
+      window.location.hostname.endsWith('.vercel.app') &&
+      config.baseURL?.startsWith('https://sarthi-ai-szqy.onrender.com')
+    ) {
+      config._fallbackTried = true;
+      try {
+        console.warn('[SARTHI Network] Direct Render connection failed. Retrying via same-origin Vercel proxy...');
+        const proxyRes = await axios({
+          ...config,
+          baseURL: '/api',
+        });
+        return proxyRes;
+      } catch (proxyErr) {
+        // Fall through to standard error handler if proxy also fails
+      }
+    }
+
     const message = error.response?.data?.error || error.response?.data?.message || error.message || 'Network error occurred.';
     const err = new Error(message);
     if (error.code) err.code = error.code;

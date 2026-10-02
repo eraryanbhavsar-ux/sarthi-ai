@@ -70,6 +70,98 @@ function isSignificantlyDifferentScene(newDesc = '', oldDesc = '') {
 }
 
 /**
+ * Diagnostic Error Categorization (Step 9)
+ * Maps errors to clear, user-safe diagnostic categories and telemetry.
+ */
+export function categorizeVisionError(err, isServerWaking = false) {
+  const isAbort =
+    err?.name === 'AbortError' ||
+    err?.code === 'ECONNABORTED' ||
+    err?.message?.includes('aborted') ||
+    err?.message?.includes('timeout') ||
+    err?.error === 'VISION_TIMEOUT';
+
+  if (isAbort) {
+    return {
+      category: 'Timeout',
+      userMessage: isServerWaking
+        ? 'Server is taking longer than expected to wake up.'
+        : 'Analysis request timed out.',
+    };
+  }
+
+  const status = err?.response?.status;
+  if (status === 400) {
+    return {
+      category: 'HTTP 400',
+      userMessage: 'Bad request. Frame data could not be parsed.',
+    };
+  }
+  if (status === 401) {
+    return {
+      category: 'HTTP 401',
+      userMessage: 'Authentication required to access vision service.',
+    };
+  }
+  if (status === 403) {
+    return {
+      category: 'HTTP 403',
+      userMessage: 'Access to vision service is forbidden.',
+    };
+  }
+  if (status === 429) {
+    return {
+      category: 'HTTP 429',
+      userMessage: 'Rate limit reached. Pausing momentarily before next scan.',
+    };
+  }
+  if (status === 500) {
+    return {
+      category: 'HTTP 500',
+      userMessage: 'AI server encountered an internal error. Retrying...',
+    };
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return {
+      category: 'Backend unavailable',
+      userMessage: 'Backend service is starting up or temporarily unavailable.',
+    };
+  }
+
+  const msg = (err?.message || '').toLowerCase();
+  if (msg.includes('cors') || msg.includes('cross-origin')) {
+    return {
+      category: 'CORS error',
+      userMessage: 'Cross-origin request blocked by browser policy.',
+    };
+  }
+
+  if (
+    err?.code === 'ERR_NETWORK' ||
+    msg.includes('network error') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network request failed')
+  ) {
+    return {
+      category: 'Network connection failure',
+      userMessage: 'Network connection failed. Reconnecting to backend...',
+    };
+  }
+
+  if (msg.includes('invalid image payload') || msg.includes('canvas frame empty')) {
+    return {
+      category: 'Invalid image payload',
+      userMessage: 'Camera frame was unclear or invalid. Retrying on next clear frame.',
+    };
+  }
+
+  return {
+    category: status ? `HTTP ${status}` : 'Unknown error',
+    userMessage: err?.message || 'Vision analysis temporarily unavailable.',
+  };
+}
+
+/**
  * 8 Distinct Vision State Machine States:
  * IDLE -> CAMERA_STARTING -> CAMERA_READY -> CAPTURING -> ANALYZING -> RESULT -> RETRYING -> ERROR
  */
@@ -121,7 +213,6 @@ export default function VisionPage() {
   const [analysisError, setAnalysisError] = useState('');
   const [translatingLanguage, setTranslatingLanguage] = useState(false);
   const [uploadedImagePreview, setUploadedImagePreview] = useState(null);
-  const [autoScanEnabled, setAutoScanEnabled] = useState(false);
   const [isServerWaking, setIsServerWaking] = useState(false);
 
   // Auto-speak new observations (Defaults to true for accessibility, with duplicate suppression)
@@ -151,6 +242,7 @@ export default function VisionPage() {
   const abortControllerRef = useRef(null);
   const lastSpokenTextRef = useRef('');
   const lastSpokenTimeRef = useRef(0);
+  const lastAnalysisEndTimeRef = useRef(0);
   const fileInputRef = useRef(null);
   const liveRegionRef = useRef(null);
 
@@ -258,6 +350,7 @@ export default function VisionPage() {
       abortControllerRef.current = null;
     }
     isAnalyzingRef.current = false;
+    lastAnalysisEndTimeRef.current = 0;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -543,8 +636,8 @@ export default function VisionPage() {
         return;
       }
 
-      // Scene change check (only when auto-scanning and not forced)
-      if (!force && !isRetry && autoScanEnabled) {
+      // Scene change check (unless forced or retry)
+      if (!force && !isRetry) {
         const { hasChanged } = detectSceneChange(videoEl, {
           lastFailed: Boolean(analysisError),
         });
@@ -680,55 +773,71 @@ export default function VisionPage() {
           return;
         }
 
-        const isAbort = err.name === 'AbortError' || err.message?.includes('aborted');
-        let reason = '';
+        const tElapsedSec = ((performance.now() - requestStart) / 1000).toFixed(2);
+        const { category, userMessage } = categorizeVisionError(err, isServerWaking);
 
-        if (isAbort) {
-          reason = isServerWaking ? 'Server wake-up timed out' : 'Gemini request timed out';
-        } else if (err.message?.includes('429') || err.message?.toLowerCase().includes('too many requests')) {
-          reason = 'Server rate limit reached (HTTP 429)';
-        } else if (err.message?.includes('500') || err.message?.toLowerCase().includes('server error')) {
-          reason = `Backend returned HTTP 500 (${err.message})`;
-        } else if (err.message?.toLowerCase().includes('network') || err.message?.toLowerCase().includes('failed to fetch')) {
-          reason = 'Network request failed. Backend may be offline.';
-        } else {
-          reason = err.message || 'Analysis failed';
-        }
+        console.error(`[Vision ${reqIdStr}]
+request URL: ${api.defaults.baseURL}/vision/analyze
+request ID: ${reqIdStr}
+request started: ${new Date(Date.now() - Math.round(tElapsedSec * 1000)).toISOString()}
+request completed: ${new Date().toISOString()}
+HTTP status: ${err?.response?.status || 'None'}
+elapsed time: ${tElapsedSec}s
+error category: ${category}
+backend error: ${err.message || 'None'}`);
 
-        console.error(`[Vision ${reqIdStr}]\nFAILED\n\nreason:\n${reason}\n\nbackend error:\n${err.message}`);
-
-        setAnalysisError(`Vision unavailable\nReason: ${reason}`);
+        setAnalysisError(`Vision unavailable — Reason: ${userMessage}`);
         setVisionState(VISION_STATES.ERROR);
-        announceRef.current('Vision analysis temporarily unavailable. Please try again.');
+        announceRef.current(`Vision unavailable. ${userMessage}`);
       } finally {
         setIsServerWaking(false);
         if (requestId === activeRequestIdRef.current) {
           isAnalyzingRef.current = false;
+          lastAnalysisEndTimeRef.current = Date.now();
           abortControllerRef.current = null;
         }
       }
     },
-    [cameraStatus, isAnalysisPaused, analysis, activeLanguage, user, autoSpeak, autoScanEnabled, triggerNonBlockingTTS, analysisError, isServerWaking]
+    [cameraStatus, isAnalysisPaused, analysis, activeLanguage, user, autoSpeak, triggerNonBlockingTTS, analysisError, isServerWaking]
   );
 
   /**
-   * Controlled sequential automatic scanning (Phase 14 & 19):
-   * Runs only when autoScanEnabled is true.
-   * Strict lock ensures only one request is in-flight at any time.
+   * Continuous Controlled Scene Monitoring (Accessibility Live Visual Assistant):
+   * No capture button. No manual analyze button.
+   * Periodically checks if the scene has changed (luminance delta).
+   * Enforces single in-flight request lock and a 3.5s cooldown between analyses.
+   * Auto-recovers if previous attempt had an error.
    */
   useEffect(() => {
-    if (cameraActive && !isAnalysisPaused && autoScanEnabled) {
-      analysisIntervalRef.current = setInterval(() => {
-        if (!isAnalyzingRef.current) {
-          analyzeCurrentFrame(false);
-        }
-      }, 3500);
-    } else {
+    if (!cameraActive || isAnalysisPaused) {
       if (analysisIntervalRef.current) {
         clearInterval(analysisIntervalRef.current);
         analysisIntervalRef.current = null;
       }
+      return;
     }
+
+    analysisIntervalRef.current = setInterval(() => {
+      if (isAnalyzingRef.current) return;
+
+      const now = Date.now();
+      // 3.5s cooldown after previous analysis completed
+      if (now - lastAnalysisEndTimeRef.current < 3500) {
+        return;
+      }
+
+      const videoEl = videoRef.current;
+      if (!videoEl || videoEl.readyState < 2) return;
+
+      // Check scene change (or auto-retry if last failed)
+      const { hasChanged } = detectSceneChange(videoEl, {
+        lastFailed: Boolean(analysisError),
+      });
+
+      if (hasChanged) {
+        analyzeCurrentFrame(false);
+      }
+    }, 1200);
 
     return () => {
       if (analysisIntervalRef.current) {
@@ -736,7 +845,7 @@ export default function VisionPage() {
         analysisIntervalRef.current = null;
       }
     };
-  }, [cameraActive, isAnalysisPaused, autoScanEnabled, analyzeCurrentFrame]);
+  }, [cameraActive, isAnalysisPaused, analyzeCurrentFrame, analysisError]);
 
   /**
    * Translate active vision result on-the-fly when user changes language
@@ -1001,9 +1110,9 @@ export default function VisionPage() {
       return analysisError.replace('\n', ' — ');
     }
     if (analysis?.description) {
-      return 'Description ready.';
+      return 'Vision active — Point at anything to describe';
     }
-    return autoScanEnabled ? 'Auto-scanning camera feed' : 'Camera ready — click Capture to analyze';
+    return 'Vision ready — Point your camera at something';
   };
 
   return (
@@ -1088,25 +1197,6 @@ export default function VisionPage() {
             {blindMode ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             <span className="hidden md:inline">Voice-First</span>
           </button>
-
-          {/* Continuous Auto-Scan Toggle (Phases 9, 14 & 19) */}
-          {cameraActive && (
-            <button
-              type="button"
-              onClick={() => setAutoScanEnabled((prev) => !prev)}
-              className={`px-2.5 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border transition-all flex items-center gap-1.5 ${
-                autoScanEnabled
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-400'
-                  : 'bg-slate-900/80 text-slate-300 border-slate-700/80 hover:bg-slate-800'
-              }`}
-              aria-pressed={autoScanEnabled}
-              aria-label={`Toggle Continuous Auto-Scan (currently ${autoScanEnabled ? 'ON' : 'OFF'})`}
-              title={autoScanEnabled ? 'Continuous auto-scan is active' : 'Click to enable continuous auto-scanning'}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${autoScanEnabled ? 'animate-spin text-emerald-400' : 'text-slate-400'}`} />
-              <span className="hidden sm:inline">{autoScanEnabled ? 'Auto-Scan: ON' : 'Auto-Scan: OFF'}</span>
-            </button>
-          )}
 
           {/* Camera Flip Button (Front / Rear) */}
           {cameraActive && (
@@ -1327,15 +1417,15 @@ export default function VisionPage() {
 
               <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-800/80">
                 <span className="text-[11px] text-slate-400">
-                  Camera feed remains active. Capture a fresh frame:
+                  Camera feed active — auto-recovering on next scene...
                 </span>
                 <button
                   type="button"
                   onClick={() => analyzeCurrentFrame(true)}
-                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all focus:ring-2 focus:ring-amber-300 shrink-0"
-                  aria-label="Capture fresh frame and try analysis again"
+                  className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all shrink-0"
+                  aria-label="Retry analysis now"
                 >
-                  <RefreshCw className="w-4 h-4" />
+                  <RefreshCw className="w-3.5 h-3.5" />
                   <span>Try Again</span>
                 </button>
               </div>
@@ -1361,17 +1451,8 @@ export default function VisionPage() {
                   </div>
                 </div>
 
-                {/* Speech & Capture Player Controls */}
+                {/* Speech & Audio Controls */}
                 <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => analyzeCurrentFrame(true)}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
-                    title="Capture fresh frame from camera"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Fresh Frame</span>
-                  </button>
 
                   <button
                     type="button"
@@ -1475,29 +1556,19 @@ export default function VisionPage() {
               </div>
             </div>
           ) : !analysisError ? (
-            /* Idle / Waiting Hint Bar */
-            <div className="bg-slate-950/80 backdrop-blur-md border border-slate-800 rounded-2xl px-4 py-3 flex items-center justify-between text-xs text-slate-400 shadow-xl">
+            /* Continuous Monitoring Hint Bar (No capture button) */
+            <div className="bg-slate-950/80 backdrop-blur-md border border-slate-800 rounded-2xl px-4 py-3 flex items-center justify-between text-xs text-slate-300 shadow-xl">
               <span className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span>Point camera at an object or document</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-medium text-slate-200">Point camera at any object, document, or sign</span>
               </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => analyzeCurrentFrame(true)}
-                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Capture & Analyze</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowToolsDrawer(true)}
-                  className="text-amber-400 hover:text-amber-300 font-bold shrink-0 text-xs px-2 py-1"
-                >
-                  Options
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowToolsDrawer(true)}
+                className="text-amber-400 hover:text-amber-300 font-bold shrink-0 text-xs px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 transition-colors"
+              >
+                Options
+              </button>
             </div>
           ) : null}
         </div>
@@ -1703,7 +1774,7 @@ export default function VisionPage() {
                     className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl flex items-center justify-center gap-2"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Analyze Current Camera View Now</span>
+                    <span>Refresh Vision Analysis</span>
                   </button>
                 )}
               </div>

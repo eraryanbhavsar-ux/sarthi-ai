@@ -42,7 +42,7 @@ Only features implemented and verified in the codebase are listed below:
 - **Interactive Action Checklist:** An interactive checklist with progress tracking, persistent state, and guided step-by-step card views.
 - **Multilingual Translation:** Complete document and takeaway translation across 11 Indian regional languages (English, Hindi, Marathi, Gujarati, Bengali, Tamil, Telugu, Kannada, Malayalam, Punjabi, Odia).
 - **Text-to-Speech (TTS):** Dual-layer audio narration using client-side Web Speech synthesis with dynamic locale detection and automatic sentence chunking to prevent browser speech cutoffs.
-- **Live Vision & Camera Assistance:** Real-time camera feed analysis describing scenes, reading text, identifying objects, and detecting form fields for visually impaired users.
+- **Live Vision & Camera Assistance:** Live camera assistance with automatic representative-frame analysis and controlled scene-change detection for visually impaired users.
 - **Voice Interaction ("Hey Sarthi"):** Voice assistant with continuous wake-word listening, acoustic tolerance for Indian English and regional accents, hands-free command routing, and contextual Q&A.
 - **Accessibility-First Interface:** Built-in floating accessibility dock supporting text scaling (100% / 115% / 130%), high-contrast themes, dyslexia-friendly font spacing, reduced motion, and full keyboard operability.
 
@@ -72,7 +72,7 @@ Voice Output / Visual Response
 
 ## Vision AI Pipeline
 
-The SARTHI Vision pipeline provides visual accessibility with speed and reliability:
+The SARTHI Vision pipeline provides visual accessibility with speed, reliability, and automated scene awareness:
 
 ```
 Camera
@@ -81,9 +81,11 @@ Live Video Frame
   ↓
 Frame Validation (Dimensions & Readiness)
   ↓
-Canvas Capture (Max 1024px @ 0.75 JPEG)
+Scene-Change / Duplicate Detection
   ↓
-Frontend Request (Concurrency Lock & Timeout)
+Controlled Frame Extraction (Max 1024px @ 0.75 JPEG)
+  ↓
+Frontend Request (Concurrency Lock & 3.5s Cooldown)
   ↓
 Node.js / Express Backend (/api/vision/analyze)
   ↓
@@ -94,10 +96,12 @@ Structured Response (Description, Objects, Text)
 Description / Translation / TTS
 ```
 
-- **Frame Validation:** Validates video stream readiness (`videoWidth > 0`, `readyState >= 2`) prior to draw operations.
-- **Concurrency Control:** Employs an atomic analysis lock (`isAnalyzingRef`) ensuring no overlapping or duplicate AI requests are dispatched while an analysis is in flight.
+- **Automatic Scene Analysis:** Live camera assistance with automatic representative-frame analysis and controlled scene-change detection—no manual capture or shutter buttons required.
+- **Scene-Change Detection:** Client-side luminance differential analysis dynamically identifies when the user points the camera at a new object or scene before dispatching an AI request, avoiding redundant processing.
+- **Concurrency & Cooldown Control:** Employs an atomic mutex lock (`isAnalyzingRef`) and a controlled 3–5 second cooldown, ensuring only one request is in flight at a time with no overlapping calls.
+- **Frame Validation:** Validates video stream readiness (`videoWidth > 0`, `readyState >= 2`) prior to frame capture.
 - **Performance Optimization:** Captured frames are scaled to a maximum dimension of 1024px at 0.75 JPEG quality (~15–30 KB payload), minimizing upload latency and processing time.
-- **Error Recovery:** A visible error banner with a one-click **Try Again** button immediately captures a fresh camera frame without restarting the video stream.
+- **Error Recovery:** Displays clear diagnostic categories (network, CORS, rate limits, timeouts) with transparent auto-recovery on the next stable frame, alongside an optional Try Again recovery action.
 - **Non-blocking Speech:** Audio narration of visual descriptions runs asynchronously, allowing the camera and UI to remain responsive during playback.
 
 ---
